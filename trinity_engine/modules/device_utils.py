@@ -1,0 +1,131 @@
+import torch
+
+class DeviceOptimizer:
+    """
+    Utility class for cross-platform model hardware acceleration in Trinity V8.1.
+    Handles dynamic detection of CUDA (NVIDIA), MPS (Apple Silicon), and CPU.
+    """
+    
+    @classmethod
+    def get_optimal_device(cls) -> torch.device:
+        """Returns the optimal torch.device available on the system."""
+        if cls._force_cpu:
+            return torch.device("cpu")
+        if torch.cuda.is_available():
+            return torch.device("cuda")
+        elif torch.backends.mps.is_available():
+            return torch.device("mps")
+        else:
+            return torch.device("cpu")
+
+    @classmethod
+    def get_device_string(cls) -> str:
+        """Returns string representation 'cuda', 'mps', or 'cpu' for external libraries."""
+        if cls._force_cpu:
+            return "cpu"
+        if torch.cuda.is_available():
+            return "cuda"
+        elif torch.backends.mps.is_available():
+            return "mps"
+        else:
+            return "cpu"
+
+    @staticmethod
+    def is_cuda_available() -> bool:
+        return torch.cuda.is_available()
+
+    @staticmethod
+    def is_mps_available() -> bool:
+        return hasattr(torch.backends, 'mps') and torch.backends.mps.is_available()
+
+    @staticmethod
+    def move_to_optimal_device(tensor: torch.Tensor) -> torch.Tensor:
+        """Moves a given tensor to the optimal compute device."""
+        device = DeviceOptimizer.get_optimal_device()
+        return tensor.to(device)
+
+    @staticmethod
+    def decoupled_stft(audio_tensor, n_fft=1024, hop_length=256, win_length=None):
+        """
+        Executes STFT strictly on the CPU.
+        Apple Silicon MPS backend currently struggles with complex number operations in STFT.
+        """
+        cpu_tensor = audio_tensor.to(torch.device("cpu"))
+        return torch.stft(
+            cpu_tensor,
+            n_fft=n_fft,
+            hop_length=hop_length,
+            win_length=win_length,
+            return_complex=True
+        )
+
+    @staticmethod
+    def decoupled_istft(stft_matrix, n_fft=1024, hop_length=256, win_length=None):
+        """
+        Executes iSTFT strictly on the CPU to reconstruct the audio waveform from a complex STFT matrix.
+        """
+        cpu_matrix = stft_matrix.to(torch.device("cpu"))
+        return torch.istft(
+            cpu_matrix,
+            n_fft=n_fft,
+            hop_length=hop_length,
+            win_length=win_length
+        )
+
+    # ── Forced CPU Context Manager ──────────────────────────────────────
+
+    _force_cpu = False
+
+    @classmethod
+    def force_cpu_context(cls):
+        """
+        Context manager that temporarily forces all device queries to return CPU.
+        Used by the RetryEngine's cpu_retry fallback strategy.
+        
+        Usage:
+            with DeviceOptimizer.force_cpu_context():
+                model = load_model(device=DeviceOptimizer.get_device_string())
+                # ^ will return 'cpu' regardless of GPU availability
+        """
+        import contextlib
+
+        @contextlib.contextmanager
+        def _ctx():
+            cls._force_cpu = True
+            print("[DeviceOptimizer] ⚠ FORCED CPU MODE ACTIVE")
+            try:
+                yield
+            finally:
+                cls._force_cpu = False
+                print("[DeviceOptimizer] Restored default device selection")
+
+        return _ctx()
+
+    @staticmethod
+    def get_memory_info() -> dict:
+        """
+        Returns a dictionary with available memory diagnostics.
+        Works on both macOS and Windows. Falls back gracefully if psutil is unavailable.
+        """
+        import platform
+        info = {"platform": platform.system(), "arch": platform.machine()}
+
+        try:
+            import psutil
+            info["system_ram_total_gb"] = round(psutil.virtual_memory().total / (1024**3), 2)
+            info["system_ram_available_gb"] = round(psutil.virtual_memory().available / (1024**3), 2)
+            info["system_ram_percent_used"] = psutil.virtual_memory().percent
+        except ImportError:
+            info["system_ram_total_gb"] = "unknown (psutil not installed)"
+
+        if torch.cuda.is_available():
+            for i in range(torch.cuda.device_count()):
+                allocated = torch.cuda.memory_allocated(i) / (1024**3)
+                reserved = torch.cuda.memory_reserved(i) / (1024**3)
+                total = torch.cuda.get_device_properties(i).total_mem / (1024**3)
+                info[f"gpu_{i}_allocated_gb"] = round(allocated, 2)
+                info[f"gpu_{i}_reserved_gb"] = round(reserved, 2)
+                info[f"gpu_{i}_total_gb"] = round(total, 2)
+
+        return info
+

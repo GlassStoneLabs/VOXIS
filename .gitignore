@@ -1,0 +1,80 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.venv
+
+# Node / React
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.eslintcache
+.stylelintcache
+dist/
+out/
+
+# Rust / Tauri
+target/
+app/src-tauri/target/
+app/src-tauri/binaries/*
+!app/src-tauri/binaries/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project Specific
+trinity_engine/test_input.wav
+trinity_engine/dependencies/
+trinity_engine/trinity_temp/
+*.dmg
+*.exe
+*.pkg
+*.spec
+
+# Installer & Build
+venv/
+distro/
+dist/
+build/
+installer_assets/
+VOXIS-*.zip
+VOXIS-*.tar.gz
+*.command
+*.bat
+*.ps1
+
+# Models & Temp
+trinity_engine/dependencies/models/
+trinity_engine/trinity_temp/
+trinity_engine/distro/
+trinity_engine/out.wav
+trinity_engine/out2.wav
+test_venv/
+test_venv2/
+*.wav
+*.flac
+*.mp3
+*.mp4
+*.mkv
+*.log
+dependencies/
