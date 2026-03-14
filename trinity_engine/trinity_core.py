@@ -136,11 +136,10 @@ class TrinityV8Desktop:
                 self.cache.put(job_key, "02_separate", vocal_wav)
             print(f"   ⏱ Separate: {time.perf_counter() - t0:.2f}s")
 
-            # ── STEP 2.5 · ANALYZE ──────────────────────────────────────
+            # ── STEP 3/6 · ANALYZE ──────────────────────────────────────
             t0 = time.perf_counter()
-            print(">> [2.5/6] Spectral Analysis & Noise Profiling...")
+            print(">> [3/6] Spectrum Analysis & Noise Profiling...")
             noise_profile = self.profiler.analyze(vocal_wav)
-            print(f"   ⏱ Analyze: {time.perf_counter() - t0:.2f}s")
 
             # ── AUTO-EQ: derive optimal filter settings from spectral profile ──
             try:
@@ -149,38 +148,38 @@ class TrinityV8Desktop:
                 print(f"[WARNING] Auto-EQ computation failed: {eq_err}")
                 auto_eq = {'lowpass_hz': 20000.0, 'highpass_hz': 20.0, 'vocal_presence_db': 0.0}
 
-            # ── STEP 3/6 · DENOISE (PRE) ────────────────────────────────
+            # Emit structured auto-EQ line so the UI can parse and display it
+            print(
+                f"[NoiseProfiler] Auto-EQ: "
+                f"HPF={int(auto_eq.get('highpass_hz', 20))}Hz | "
+                f"LPF={int(auto_eq.get('lowpass_hz', 20000))}Hz | "
+                f"Vocal={auto_eq.get('vocal_presence_db', 0.0):+.1f}dB"
+            )
+            print(f"   ⏱ Analyze: {time.perf_counter() - t0:.2f}s")
+
+            # ── STEP 4/6 · DENOISE ──────────────────────────────────────
             t0 = time.perf_counter()
-            cached = self.cache.get(job_key, "03_denoise_pre")
+            cached = self.cache.get(job_key, "04_denoise")
             if cached:
                 enhanced_wav_1 = cached
             else:
-                print(">> [3/6] Neural Denoise Inference (DeepFilterNet3)...")
+                print(">> [4/6] Neural Denoise Inference (DeepFilterNet3)...")
                 enhanced_wav_1 = self._stage_denoise(vocal_wav, stage="pre-diffusion")
-                self.cache.put(job_key, "03_denoise_pre", enhanced_wav_1)
-            print(f"   ⏱ Denoise (Pre): {time.perf_counter() - t0:.2f}s")
+                self.cache.put(job_key, "04_denoise", enhanced_wav_1)
+            print(f"   ⏱ Denoise: {time.perf_counter() - t0:.2f}s")
 
-            # ── STEP 4/6 · UPSCALE ──────────────────────────────────────
+            # ── STEP 5/6 · UPSCALE (+ post-diffusion denoise) ───────────
             t0 = time.perf_counter()
-            cached = self.cache.get(job_key, "04_upscale")
-            if cached:
-                hi_res_wav = cached
-            else:
-                print(">> [4/6] Trinity AudioSR Diffusion Upscale to 48kHz...")
-                hi_res_wav = self._stage_upscale(enhanced_wav_1, target_sr=48000)
-                self.cache.put(job_key, "04_upscale", hi_res_wav)
-            print(f"   ⏱ Upscale: {time.perf_counter() - t0:.2f}s")
-
-            # ── STEP 5/6 · DENOISE (POST) ───────────────────────────────
-            t0 = time.perf_counter()
-            cached = self.cache.get(job_key, "05_denoise_post")
+            cached = self.cache.get(job_key, "05_upscale")
             if cached:
                 enhanced_wav_2 = cached
             else:
-                print(">> [5/6] Neural Denoise (DeepFilterNet3 Post-Diffusion)...")
+                print(">> [5/6] Trinity AudioSR Diffusion Upscale to 48kHz...")
+                hi_res_wav = self._stage_upscale(enhanced_wav_1, target_sr=48000)
+                # Post-diffusion cleanup runs silently within this step
                 enhanced_wav_2 = self._stage_denoise(hi_res_wav, stage="post-diffusion")
-                self.cache.put(job_key, "05_denoise_post", enhanced_wav_2)
-            print(f"   ⏱ Denoise (Post): {time.perf_counter() - t0:.2f}s")
+                self.cache.put(job_key, "05_upscale", enhanced_wav_2)
+            print(f"   ⏱ Upscale: {time.perf_counter() - t0:.2f}s")
 
             # ── STEP 6/6 · MASTER ───────────────────────────────────────
             t0 = time.perf_counter()

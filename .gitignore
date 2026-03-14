@@ -32,11 +32,9 @@ yarn-error.log*
 dist/
 out/
 
-# Rust / Tauri
-target/
-app/src-tauri/target/
-app/src-tauri/binaries/*
-!app/src-tauri/binaries/.gitkeep
+# Rust / Tauri (removed — migrated to Electron)
+app/src-tauri/
+app/public/tauri.svg
 
 # Electron sidecar binary (628MB — distribute separately)
 app/resources/bin/trinity_v8_core

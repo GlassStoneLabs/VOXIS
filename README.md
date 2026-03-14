@@ -21,8 +21,8 @@ geometric grid, zero ornament.
 | Step | Module | Technology |
 |------|--------|------------|
 | 1 | **Ingest** | FFmpeg universal decoder (WAV, MP3, MP4, MOV, MKV) |
-| 2 | **Separate** | Glass Stone Separator — Mel-Band RoFormer (BS-RoFormer) |
-| 3 | **Analyze** | Spectrum & RMS noise profiling |
+| 2 | **Separate** | Glass Stone Separator — BS-RoFormer vocal extraction |
+| 3 | **Analyze** | Spectrum & RMS noise profiling with Auto-EQ detection |
 | 4 | **Denoise** | DeepFilterNet3 — HIGH (48dB) or EXTREME (100dB) |
 | 5 | **Upscale** | AudioSR latent diffusion → 48kHz stereo |
 | 6 | **Master** | Phase Limiter + Stereo Width (Pedalboard) |
@@ -35,27 +35,24 @@ geometric grid, zero ornament.
 | Platform | Status | Installer |
 |----------|--------|-----------|
 | macOS M-Series | Primary | `.dmg` |
-| Windows x86_64 | Secondary | `.exe` (NSIS) |
+| Windows x86_64 | Secondary | `.exe` (planned) |
 
 ---
 
 ## Build
 
 ```bash
-# Full build (downloads deps, compiles engine, builds installer)
+# Full build (compiles engine + builds DMG installer)
 ./build_scripts/build_voxis_desktop.sh
 
-# Skip dependency install (if already installed)
-./build_scripts/build_voxis_desktop.sh --skip-deps
-
-# Tauri frontend only (if engine binary already exists)
-./build_scripts/build_voxis_desktop.sh --tauri-only
+# Skip Python build (if binary already exists at app/resources/bin/trinity_v8_core)
+./build_scripts/build_voxis_desktop.sh --skip-python
 
 # Clean build
 ./build_scripts/build_voxis_desktop.sh --clean
 ```
 
-Prerequisites: Python 3.11+, Node.js 20+, Rust (stable), FFmpeg, Git.
+**Prerequisites:** Python 3.11+, Node.js 20+, FFmpeg (`brew install ffmpeg`), Git.
 
 ---
 
@@ -63,20 +60,40 @@ Prerequisites: Python 3.11+, Node.js 20+, Rust (stable), FFmpeg, Git.
 
 ```
 Voxis V4.0.0 DENSE
-├── app/                    Frontend (Tauri + React/TypeScript, Bauhaus UI)
-│   └── src-tauri/          Rust host — sidecar management, event streaming
-├── trinity_engine/         Python Backend — Trinity V8 Engine
-│   ├── trinity_core.py     Pipeline orchestrator
+├── app/                       Frontend (Electron + React/TypeScript, Bauhaus UI)
+│   ├── electron/              Electron main process & preload bridge
+│   │   ├── main.ts            Window management, IPC, sidecar spawn
+│   │   └── preload.ts         Context bridge (window.electronAPI)
+│   ├── src/
+│   │   ├── App.tsx            Bauhaus UI — all 5 modules inline
+│   │   └── Bauhaus.css        Design system tokens and layout
+│   └── resources/bin/         Trinity V8.1 compiled binary (not in git — see below)
+├── trinity_engine/            Python Backend — Trinity V8.1 Engine
+│   ├── trinity_core.py        Pipeline orchestrator
 │   └── modules/
-│       ├── ingest.py       FFmpeg decode/export
-│       ├── uvr_processor.py   Glass Stone Separator
+│       ├── ingest.py          FFmpeg decode/export
+│       ├── uvr_processor.py   Glass Stone Separator (BS-RoFormer)
 │       ├── spectrum_analyzer.py
-│       ├── denoiser.py     DeepFilterNet3
-│       ├── upsampler.py    AudioSR
-│       ├── mastering.py    Pedalboard
-│       └── mps_utils.py    Apple Silicon MPS optimizer
-├── build_scripts/          Build automation
-└── trinity_v8_core.spec    PyInstaller spec
+│       ├── voicerestore_wrapper.py  DeepFilterNet3
+│       ├── upsampler.py       AudioSR latent diffusion
+│       ├── mastering_phase.py Pedalboard limiter + stereo width
+│       └── device_utils.py    Apple Silicon MPS optimizer
+├── build_scripts/             Build automation
+│   └── build_voxis_desktop.sh
+└── trinity_v8_core.spec       PyInstaller spec
+```
+
+> **Note:** The `trinity_v8_core` binary (~600MB) is not tracked in git.
+> Build it with `./build_scripts/build_voxis_desktop.sh` or download from Releases.
+
+---
+
+## Dev Mode
+
+```bash
+cd app
+npm install
+npm run electron:dev   # starts Vite + Electron with hot reload
 ```
 
 ---
