@@ -25,7 +25,6 @@ librosa>=0.10.0
 audio-separator[cpu]>=0.41.0
 
 # ── Neural Super-Resolution ───────────────────────────────────────────────────
-audiosr>=0.0.7
 matplotlib>=3.7.0      # Required by AudioSR internals
 
 # ── VoiceRestore — Transformer-Diffusion Denoiser ────────────────────────────

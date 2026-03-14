@@ -63,11 +63,11 @@ jobs:
           python -m pip install -r trinity_engine/requirements.txt
           python -m pip install pyinstaller
 
-      # ── Build Trinity V8 Engine (PyInstaller) ─────────────────────────
+      # ── Build Trinity V8.1 Engine (PyInstaller) ─────────────────────────
 
       - name: Build Trinity Engine Binary
         run: |
-          pyinstaller --noconfirm --clean trinity_v8_core.spec
+          pyinstaller --noconfirm --clean trinity_v8.1_core.spec
 
       - name: Stage Engine Binary
         shell: bash

@@ -38,6 +38,9 @@ app/src-tauri/target/
 app/src-tauri/binaries/*
 !app/src-tauri/binaries/.gitkeep
 
+# Electron sidecar binary (628MB — distribute separately)
+app/resources/bin/trinity_v8_core
+
 # OS
 .DS_Store
 Thumbs.db
