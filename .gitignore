@@ -50,7 +50,7 @@ trinity_engine/trinity_temp/
 *.dmg
 *.exe
 *.pkg
-*.spec
+# *.spec — intentionally NOT excluded; trinity_v8_core.spec is tracked in git
 
 # Installer & Build
 venv/

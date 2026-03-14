@@ -37,7 +37,9 @@ jobs:
       # ── Python deps ───────────────────────────────────────────────────────
       - name: Install Python dependencies
         run: |
-          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install --upgrade pip wheel
+          # Pin setuptools and numpy for PyInstaller compatibility
+          python -m pip install "setuptools==69.5.1" "numpy<2.0"
           python -m pip install -r trinity_engine/requirements.txt
           python -m pip install pyinstaller
 

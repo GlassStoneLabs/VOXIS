@@ -30,29 +30,103 @@ geometric grid, zero ornament.
 
 ---
 
+## Installing on a New Device
+
+### Option A — DMG Installer (End Users, macOS)
+
+1. Download `Voxis 4.0 DENSE-4.0.0-arm64.dmg` from the [Releases](../../releases) page
+2. Open the DMG and drag **Voxis 4.0 DENSE** to `/Applications`
+3. On first launch, right-click → Open (bypasses Gatekeeper on first run)
+4. No additional dependencies required — everything is bundled
+
+> **Note:** First launch may take 10–30 seconds while the Trinity Engine unpacks.
+> Requires macOS 12.0+ and Apple M-series chip.
+
+---
+
+### Option B — Build from Source (Developers, macOS)
+
+#### 1. System Prerequisites
+
+```bash
+# Install Homebrew (if not installed)
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Install required system tools
+brew install python@3.11 node ffmpeg git
+
+# Verify
+python3 --version   # must be 3.11+
+node --version      # must be 20+
+ffmpeg -version
+```
+
+#### 2. Clone Repository
+
+```bash
+git clone --recurse-submodules https://github.com/GlassStoneLabs/VOXIS.git
+cd VOXIS
+```
+
+#### 3. Install Python Dependencies
+
+```bash
+# Pin versions required for binary compatibility
+pip3 install "setuptools==69.5.1" "numpy<2.0"
+pip3 install -r trinity_engine/requirements.txt
+pip3 install pyinstaller
+```
+
+#### 4. Run the Automated Build
+
+```bash
+./build_scripts/build_voxis_desktop.sh
+```
+
+This will:
+- Compile `trinity_v8_core` binary via PyInstaller (~5–15 min, requires GPU memory)
+- Bundle binary into `app/resources/bin/`
+- Build the Electron frontend (`npm run electron:build`)
+- Output DMG to `app/release/`
+
+#### 5. Skip Python build (if binary already exists)
+
+```bash
+./build_scripts/build_voxis_desktop.sh --skip-python
+```
+
+---
+
+### Option C — Dev Mode (Hot Reload)
+
+```bash
+cd app
+npm install
+npm run electron:dev   # Vite dev server + Electron with hot reload
+```
+
+> Requires `app/resources/bin/trinity_v8_core` binary to exist for engine features.
+> Build it once with `./build_scripts/build_voxis_desktop.sh --skip-deps` first.
+
+---
+
+## Known Build Notes
+
+| Issue | Fix |
+|-------|-----|
+| `pkg_resources.NullProvider` crash | Pin `setuptools==69.5.1` before PyInstaller build |
+| `numpy.core._multiarray_umath` crash | Pin `numpy<2.0` before PyInstaller build |
+| First launch slow | Normal — Trinity Engine unpacks on first run |
+| Gatekeeper blocks on macOS | Right-click → Open on first launch |
+
+---
+
 ## Platforms
 
 | Platform | Status | Installer |
 |----------|--------|-----------|
-| macOS M-Series | Primary | `.dmg` |
-| Windows x86_64 | Secondary | `.exe` (planned) |
-
----
-
-## Build
-
-```bash
-# Full build (compiles engine + builds DMG installer)
-./build_scripts/build_voxis_desktop.sh
-
-# Skip Python build (if binary already exists at app/resources/bin/trinity_v8_core)
-./build_scripts/build_voxis_desktop.sh --skip-python
-
-# Clean build
-./build_scripts/build_voxis_desktop.sh --clean
-```
-
-**Prerequisites:** Python 3.11+, Node.js 20+, FFmpeg (`brew install ffmpeg`), Git.
+| macOS M-Series | ✓ Primary | `.dmg` |
+| Windows x86_64 | Planned | `.exe` (NSIS) |
 
 ---
 
@@ -61,13 +135,13 @@ geometric grid, zero ornament.
 ```
 Voxis V4.0.0 DENSE
 ├── app/                       Frontend (Electron + React/TypeScript, Bauhaus UI)
-│   ├── electron/              Electron main process & preload bridge
+│   ├── electron/
 │   │   ├── main.ts            Window management, IPC, sidecar spawn
 │   │   └── preload.ts         Context bridge (window.electronAPI)
 │   ├── src/
-│   │   ├── App.tsx            Bauhaus UI — all 5 modules inline
+│   │   ├── App.tsx            Bauhaus UI — 5 inline modules
 │   │   └── Bauhaus.css        Design system tokens and layout
-│   └── resources/bin/         Trinity V8.1 compiled binary (not in git — see below)
+│   └── resources/bin/         trinity_v8_core binary (not in git — build or download)
 ├── trinity_engine/            Python Backend — Trinity V8.1 Engine
 │   ├── trinity_core.py        Pipeline orchestrator
 │   └── modules/
@@ -78,23 +152,13 @@ Voxis V4.0.0 DENSE
 │       ├── upsampler.py       AudioSR latent diffusion
 │       ├── mastering_phase.py Pedalboard limiter + stereo width
 │       └── device_utils.py    Apple Silicon MPS optimizer
-├── build_scripts/             Build automation
-│   └── build_voxis_desktop.sh
-└── trinity_v8_core.spec       PyInstaller spec
+├── build_scripts/
+│   └── build_voxis_desktop.sh  Full build automation
+└── trinity_v8_core.spec        PyInstaller freeze spec
 ```
 
-> **Note:** The `trinity_v8_core` binary (~600MB) is not tracked in git.
-> Build it with `./build_scripts/build_voxis_desktop.sh` or download from Releases.
-
----
-
-## Dev Mode
-
-```bash
-cd app
-npm install
-npm run electron:dev   # starts Vite + Electron with hot reload
-```
+> **Binary note:** `trinity_v8_core` (~630MB) is not tracked in git.
+> Build via `./build_scripts/build_voxis_desktop.sh` or download from Releases.
 
 ---
 

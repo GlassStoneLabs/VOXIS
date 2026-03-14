@@ -63,8 +63,9 @@ if ! $SKIP_PYTHON; then
   log "STEP 1/3 — Building Trinity V8.1 Engine (PyInstaller)..."
   cd "${PROJECT_ROOT}"
 
-  # Install Python deps
-  python3 -m pip install --quiet --upgrade pip setuptools wheel
+  # Install Python deps (pin setuptools + numpy for PyInstaller compatibility)
+  python3 -m pip install --quiet --upgrade pip wheel
+  python3 -m pip install --quiet "setuptools==69.5.1" "numpy<2.0"
   python3 -m pip install --quiet -r "${ENGINE_DIR}/requirements.txt"
   python3 -m pip install --quiet pyinstaller
 
