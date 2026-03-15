@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Glass Stone LLC. All Rights Reserved.
 // Powered by Trinity V8.1 | Built by Glass Stone
 
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell, nativeImage } from 'electron';
 import { spawn, ChildProcess } from 'child_process';
 import { createInterface } from 'readline';
 import * as path from 'path';
@@ -241,7 +241,19 @@ ipcMain.handle('shell:openPath', (_event, filePath: string) => {
 // ---------------------------------------------------------------------------
 // App lifecycle
 // ---------------------------------------------------------------------------
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  // Set dock icon on macOS (required in dev mode — production uses .icns from bundle)
+  if (process.platform === 'darwin') {
+    const iconPath = isDev
+      ? path.join(__dirname, '..', 'resources', 'icons', 'icon.png')
+      : path.join(process.resourcesPath, '..', 'Resources', 'icon.icns');
+    try {
+      const dockIcon = nativeImage.createFromPath(iconPath);
+      if (!dockIcon.isEmpty()) app.dock?.setIcon(dockIcon);
+    } catch { /* icon not found — use default */ }
+  }
+  createWindow();
+});
 
 app.on('window-all-closed', () => {
   if (activeProcess) {

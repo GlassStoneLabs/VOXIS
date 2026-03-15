@@ -1,19 +1,19 @@
 # VOXIS V4.0.0 DENSE — TRINITY V8.1 ENGINE (DESKTOP)
 # Copyright © 2026 Glass Stone LLC. All Rights Reserved.
 # CEO: Gabriel B. Rodriguez
-# Timestamp: 2026-03-05
+# Timestamp: 2026-03-15
 #
 # Pipeline:
 #   1. INGEST      — FFmpeg universal decode (audio + video)
 #   2. SEPARATE    — Glass Stone Separator (BS-RoFormer)
-#   3. DENOISE     — DeepFilterNet3 (Pre-Diffusion)
-#   4. UPSCALE     — AudioSR latent diffusion 48kHz
-#   5. DENOISE     — DeepFilterNet3 (Post-Diffusion)
+#   3. ANALYZE     — Spectrum Noise Profile + Auto-EQ
+#   4. DENOISE     — DeepFilterNet3 (Pre-Diffusion)
+#   5. UPSCALE     — AudioSR latent diffusion 48kHz + post-diffusion denoise
 #   6. MASTER      — Pedalboard Limiter + Stereo Width
 #   7. EXPORT      — 24-bit WAV or FLAC
 #
-# Backend: Resilient pipeline with stage caching, retry engine,
-#          error telemetry, and cross-platform support (macOS + Windows).
+# Performance: Lazy model loading — models only load when their stage
+#              is first called, reducing startup from ~170s to ~2s.
 
 import os
 import sys
@@ -31,41 +31,76 @@ warnings.filterwarnings("ignore", message="`torchaudio.backend.common.AudioMetaD
 # Enable MPS fallback for ops not supported on Apple Silicon (e.g. AudioSR channels)
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 
+# ── Lightweight imports only (no ML frameworks at module level) ──────────────
 from modules.ingest import AudioDecoder
-from modules.uvr_processor import GlassStoneSeparator
-from modules.voicerestore_wrapper import VoiceRestoreWrapper as DeepFilterNetWrapper
-from modules.upsampler import TrinityUpscaler
-from modules.mastering_phase import PedalboardMastering
-from modules.spectrum_analyzer import NoiseProfiler
 from modules.error_telemetry import ErrorTelemetryController
 from modules.pipeline_cache import PipelineCache
 from modules.retry_engine import RetryEngine
-from modules.device_utils import DeviceOptimizer
 
 
 class TrinityV8Desktop:
+    """
+    Trinity V8.1 pipeline with lazy model loading.
+    __init__ completes in ~2s. ML models load on first use.
+    """
+
     def __init__(self):
+        t0 = time.perf_counter()
         print(">> [SYSTEM] INITIALIZING TRINITY V8.1 DESKTOP ENGINE...")
         print(f">> [SYSTEM] Platform: {platform.system()} {platform.machine()}")
         print(">> [SYSTEM] Copyright © 2026 Glass Stone LLC — CEO: Gabriel B. Rodriguez")
 
-        # ── Infrastructure ──────────────────────────────────────────────
+        # ── Infrastructure (lightweight) ─────────────────────────────────
         self.telemetry = ErrorTelemetryController()
         self.cache     = PipelineCache()
-
-        # ── Print memory diagnostics ────────────────────────────────────
-        mem = DeviceOptimizer.get_memory_info()
-        print(f">> [SYSTEM] Device: {DeviceOptimizer.get_device_string().upper()} | "
-              f"RAM: {mem.get('system_ram_available_gb', '?')}GB free / "
-              f"{mem.get('system_ram_total_gb', '?')}GB total")
-
-        # ── Initialize all pipeline nodes ───────────────────────────────
         self.decoder   = AudioDecoder()
-        self.separator = GlassStoneSeparator()
-        self.profiler  = NoiseProfiler()
-        self.denoiser  = DeepFilterNetWrapper()
-        self.upscaler  = TrinityUpscaler()
-        self.limiter   = PedalboardMastering()
+
+        # ── Lazy-loaded pipeline nodes (None until first use) ────────────
+        self._separator = None
+        self._profiler  = None
+        self._denoiser  = None
+        self._upscaler  = None
+        self._limiter   = None
+
+        init_time = time.perf_counter() - t0
+        print(f">> [SYSTEM] Engine ready in {init_time:.2f}s (models load on demand)")
+
+    # ── Lazy accessors ────────────────────────────────────────────────────
+
+    @property
+    def separator(self):
+        if self._separator is None:
+            from modules.uvr_processor import GlassStoneSeparator
+            self._separator = GlassStoneSeparator()
+        return self._separator
+
+    @property
+    def profiler(self):
+        if self._profiler is None:
+            from modules.spectrum_analyzer import NoiseProfiler
+            self._profiler = NoiseProfiler()
+        return self._profiler
+
+    @property
+    def denoiser(self):
+        if self._denoiser is None:
+            from modules.voicerestore_wrapper import VoiceRestoreWrapper
+            self._denoiser = VoiceRestoreWrapper()
+        return self._denoiser
+
+    @property
+    def upscaler(self):
+        if self._upscaler is None:
+            from modules.upsampler import TrinityUpscaler
+            self._upscaler = TrinityUpscaler()
+        return self._upscaler
+
+    @property
+    def limiter(self):
+        if self._limiter is None:
+            from modules.mastering_phase import PedalboardMastering
+            self._limiter = PedalboardMastering()
+        return self._limiter
 
     # ── Retry-wrapped stage methods ─────────────────────────────────────
 
@@ -92,7 +127,7 @@ class TrinityV8Desktop:
     def run_pipeline(self, input_path: str, output_path: str, params: dict) -> bool:
         """
         Execute the full Voxis V4.0.0 DENSE restoration pipeline.
-        Features: stage caching, retry with fallback, per-stage timing, error telemetry.
+        Models load lazily on first pipeline run (~30-60s first time, <1s after).
         """
         fname = os.path.basename(input_path)
         pipeline_start = time.perf_counter()
@@ -114,6 +149,16 @@ class TrinityV8Desktop:
         print(f">> [CACHE] Job Key: {job_key}")
 
         try:
+            # ── Device info (lazy — imports torch only now) ─────────────
+            try:
+                from modules.device_utils import DeviceOptimizer
+                mem = DeviceOptimizer.get_memory_info()
+                print(f">> [SYSTEM] Device: {DeviceOptimizer.get_device_string().upper()} | "
+                      f"RAM: {mem.get('system_ram_available_gb', '?')}GB free / "
+                      f"{mem.get('system_ram_total_gb', '?')}GB total")
+            except Exception:
+                pass
+
             # ── STEP 1/6 · INGEST ───────────────────────────────────────
             t0 = time.perf_counter()
             cached = self.cache.get(job_key, "01_ingest")
@@ -139,6 +184,7 @@ class TrinityV8Desktop:
             # ── STEP 3/6 · ANALYZE ──────────────────────────────────────
             t0 = time.perf_counter()
             print(">> [3/6] Spectrum Analysis & Noise Profiling...")
+            from modules.spectrum_analyzer import NoiseProfiler
             noise_profile = self.profiler.analyze(vocal_wav)
 
             # ── AUTO-EQ: derive optimal filter settings from spectral profile ──
