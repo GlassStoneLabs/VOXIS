@@ -2,6 +2,11 @@
   "name": "voxis",
   "private": true,
   "version": "4.0.0",
+  "description": "VOXIS 4.0 DENSE — Professional Audio Restoration powered by Trinity V8.1",
+  "author": {
+    "name": "Glass Stone LLC",
+    "email": "info@glassstone.dev"
+  },
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
@@ -41,7 +46,21 @@
         }
       ],
       "icon": "resources/icons/icon.icns",
-      "minimumSystemVersion": "12.0"
+      "minimumSystemVersion": "12.0",
+      "darkModeSupport": false
+    },
+    "dmg": {
+      "title": "VOXIS 4.0 DENSE",
+      "icon": "resources/icons/icon.icns",
+      "iconSize": 128,
+      "window": {
+        "width": 540,
+        "height": 380
+      },
+      "contents": [
+        { "x": 140, "y": 190, "type": "file" },
+        { "x": 400, "y": 190, "type": "link", "path": "/Applications" }
+      ]
     },
     "files": [
       "dist/**/*",

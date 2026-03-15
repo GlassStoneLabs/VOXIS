@@ -46,7 +46,7 @@ jobs:
       # ── Build Trinity V8.1 Engine (PyInstaller) ───────────────────────────
       - name: Build Trinity Engine Binary
         run: |
-          pyinstaller --noconfirm --clean trinity_v8.1_core.spec
+          pyinstaller --noconfirm --clean trinity_v8_core.spec
 
       - name: Stage Engine Binary
         run: |
