@@ -122,13 +122,15 @@ class NoiseProfiler:
         Derive optimal EQ settings from the spectral profile.
         Returns a dict with lowpass_hz, highpass_hz, and vocal_presence_db.
         """
-        # Auto low pass: set to rolloff + 10% headroom, clamped to 5kHz–20kHz
+        # Auto low pass: set to rolloff + 10% headroom, clamped to 14kHz–20kHz
+        # (Floor of 14kHz preserves brightness and harmonics)
         rolloff = profile.get("spectral_rolloff_hz", 20000.0)
-        auto_lpf = min(20000.0, max(5000.0, rolloff * 1.1))
+        auto_lpf = min(20000.0, max(14000.0, rolloff * 1.1))
 
-        # Auto high pass: set to useful low frequency, clamped to 20–500Hz
+        # Auto high pass: set to useful low frequency, clamped to 20–80Hz
+        # (Cap at 80Hz protects vocal fundamentals and bass content)
         useful_low = profile.get("useful_low_hz", 20.0)
-        auto_hpf = min(500.0, max(20.0, useful_low))
+        auto_hpf = min(80.0, max(20.0, useful_low))
 
         # Auto vocal presence: boost if vocal energy is low, cut if harsh
         vocal_ratio = profile.get("vocal_energy_ratio", 0.0)

@@ -75,6 +75,20 @@ class GlassStoneSeparator:
             print(f"[{self.__class__.__name__}] Loading model: {model_name}")
             print(f"[{self.__class__.__name__}] (First run will download weights automatically)")
 
+            # Patch for PyInstaller: importlib.metadata can't find dist-info
+            # in frozen binaries, so get_package_distribution() returns None
+            # and .version crashes with "'NoneType' has no attribute 'version'"
+            _orig_get_dist = getattr(Separator, 'get_package_distribution', None)
+            if _orig_get_dist:
+                def _safe_get_dist(self_sep, package_name):
+                    dist = _orig_get_dist(self_sep, package_name)
+                    if dist is None:
+                        class _FakeDist:
+                            version = "0.0.0-frozen"
+                        return _FakeDist()
+                    return dist
+                Separator.get_package_distribution = _safe_get_dist
+
             self.separator = Separator(
                 log_level=logging.WARNING,
                 model_file_dir=self.model_dir,

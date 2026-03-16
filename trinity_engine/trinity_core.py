@@ -214,16 +214,17 @@ class TrinityV8Desktop:
                 self.cache.put(job_key, "04_denoise", enhanced_wav_1)
             print(f"   ⏱ Denoise: {time.perf_counter() - t0:.2f}s")
 
-            # ── STEP 5/6 · UPSCALE (+ post-diffusion denoise) ───────────
+            # ── STEP 5/6 · UPSCALE (post-diffusion denoise → then resample) ─
             t0 = time.perf_counter()
             cached = self.cache.get(job_key, "05_upscale")
             if cached:
                 enhanced_wav_2 = cached
             else:
                 print(">> [5/6] Trinity AudioSR Diffusion Upscale to 48kHz...")
-                hi_res_wav = self._stage_upscale(enhanced_wav_1, target_sr=48000)
-                # Post-diffusion cleanup runs silently within this step
-                enhanced_wav_2 = self._stage_denoise(hi_res_wav, stage="post-diffusion")
+                # Post-diffusion cleanup FIRST (VoiceRestore outputs 24kHz),
+                # then upscale so the final sample rate sticks at 48kHz.
+                post_denoised = self._stage_denoise(enhanced_wav_1, stage="post-diffusion")
+                enhanced_wav_2 = self._stage_upscale(post_denoised, target_sr=48000)
                 self.cache.put(job_key, "05_upscale", enhanced_wav_2)
             print(f"   ⏱ Upscale: {time.perf_counter() - t0:.2f}s")
 

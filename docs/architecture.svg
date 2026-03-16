@@ -1,0 +1,242 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 820" font-family="Helvetica Neue, Helvetica, Arial, sans-serif">
+  <defs>
+    <style>
+      .title { font-size: 28px; font-weight: 900; letter-spacing: 4px; fill: #1A1A1A; }
+      .subtitle { font-size: 13px; font-weight: 700; letter-spacing: 3px; fill: #888070; }
+      .box { stroke: #1A1A1A; stroke-width: 3; rx: 8; }
+      .box-electron { fill: #2B5EA0; }
+      .box-pipeline { fill: #1A1A1A; }
+      .box-stage { fill: #EDE8D0; }
+      .box-output { fill: #C9382D; }
+      .box-accent { fill: #F5B731; }
+      .label { font-size: 12px; font-weight: 900; letter-spacing: 2.5px; text-anchor: middle; }
+      .label-light { fill: #FFFFFF; }
+      .label-dark { fill: #1A1A1A; }
+      .sublabel { font-size: 9px; font-weight: 600; letter-spacing: 1px; text-anchor: middle; fill: #888070; }
+      .sublabel-light { fill: rgba(255,255,255,0.7); }
+      .arrow { stroke: #1A1A1A; stroke-width: 2.5; fill: none; marker-end: url(#arrowhead); }
+      .arrow-data { stroke: #2B5EA0; stroke-width: 2; stroke-dasharray: 6 3; fill: none; marker-end: url(#arrowblue); }
+      .section-label { font-size: 10px; font-weight: 900; letter-spacing: 4px; fill: #888070; }
+      .num { font-size: 22px; font-weight: 900; fill: #D8D3BE; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#1A1A1A" />
+    </marker>
+    <marker id="arrowblue" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#2B5EA0" />
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="820" fill="#EDE8D0" />
+
+  <!-- Header bar -->
+  <rect x="0" y="0" width="1200" height="70" fill="#1A1A1A" />
+  <text x="40" y="42" class="title" fill="#FFFFFF">VOXIS</text>
+  <text x="162" y="42" style="font-size:28px;font-weight:900;letter-spacing:4px;fill:#F5B731;">DENSE</text>
+  <text x="290" y="42" style="font-size:14px;font-weight:700;letter-spacing:2px;fill:rgba(255,255,255,0.4);">V4.0.0</text>
+  <text x="40" y="58" class="subtitle" style="fill:rgba(255,255,255,0.5);">TECHNICAL ARCHITECTURE — TRINITY V8.1 ENGINE</text>
+  <rect x="920" y="18" width="240" height="34" rx="17" fill="#F5B731" stroke="#1A1A1A" stroke-width="2" />
+  <text x="1040" y="40" style="font-size:11px;font-weight:900;letter-spacing:3px;text-anchor:middle;fill:#1A1A1A;">GLASS STONE LLC</text>
+
+  <!-- Section: FRONTEND -->
+  <text x="40" y="105" class="section-label">FRONTEND — ELECTRON 35 + REACT 19</text>
+  <line x1="40" y1="112" x2="560" y2="112" stroke="#D8D3BE" stroke-width="2" />
+
+  <!-- Electron Main Process -->
+  <rect x="40" y="125" width="240" height="90" class="box box-electron" />
+  <text x="160" y="158" class="label label-light">ELECTRON MAIN</text>
+  <text x="160" y="175" class="sublabel sublabel-light">BrowserWindow + IPC</text>
+  <text x="160" y="190" class="sublabel sublabel-light">child_process.spawn()</text>
+  <text x="160" y="205" class="sublabel sublabel-light">app/electron/main.ts</text>
+
+  <!-- Preload Bridge -->
+  <rect x="310" y="125" width="240" height="90" class="box box-accent" />
+  <text x="430" y="158" class="label label-dark">CONTEXT BRIDGE</text>
+  <text x="430" y="175" class="sublabel">window.electronAPI</text>
+  <text x="430" y="190" class="sublabel">dialog · trinity · shell</text>
+  <text x="430" y="205" class="sublabel">app/electron/preload.ts</text>
+
+  <!-- React UI -->
+  <rect x="580" y="125" width="280" height="90" class="box box-stage" />
+  <text x="720" y="158" class="label label-dark">BAUHAUS UI</text>
+  <text x="720" y="175" class="sublabel">React 19 + Framer Motion 12</text>
+  <text x="720" y="190" class="sublabel">5 Modules · Vite 7 HMR</text>
+  <text x="720" y="205" class="sublabel">app/src/App.tsx + Bauhaus.css</text>
+
+  <!-- Vite -->
+  <rect x="890" y="125" width="140" height="90" class="box" style="fill:#FFFFFF;" />
+  <text x="960" y="158" class="label label-dark">VITE 7</text>
+  <text x="960" y="175" class="sublabel">Dev: localhost:5173</text>
+  <text x="960" y="190" class="sublabel">Prod: file://dist/</text>
+
+  <!-- Arrows between frontend -->
+  <path d="M 280 170 L 310 170" class="arrow" />
+  <path d="M 550 170 L 580 170" class="arrow" />
+  <path d="M 860 170 L 890 170" class="arrow-data" />
+
+  <!-- Section: IPC BOUNDARY -->
+  <rect x="0" y="240" width="1200" height="30" fill="#1A1A1A" opacity="0.08" />
+  <text x="600" y="260" style="font-size:10px;font-weight:900;letter-spacing:6px;text-anchor:middle;fill:#888070;">IPC BOUNDARY — contextBridge · ipcMain/ipcRenderer</text>
+
+  <!-- Section: BACKEND -->
+  <text x="40" y="300" class="section-label">BACKEND — TRINITY V8.1 ENGINE (PYTHON 3.11 · PYINSTALLER BINARY)</text>
+  <line x1="40" y1="307" x2="800" y2="307" stroke="#D8D3BE" stroke-width="2" />
+
+  <!-- Pipeline stages -->
+  <!-- Stage 1: INGEST -->
+  <text x="110" y="340" class="num">1</text>
+  <rect x="40" y="345" width="155" height="75" class="box box-pipeline" />
+  <text x="117" y="373" class="label label-light">INGEST</text>
+  <text x="117" y="390" class="sublabel sublabel-light">FFmpeg Decode</text>
+  <text x="117" y="405" class="sublabel sublabel-light">Any format → WAV</text>
+
+  <!-- Stage 2: SEPARATE -->
+  <text x="277" y="340" class="num">2</text>
+  <rect x="215" y="345" width="155" height="75" class="box box-pipeline" />
+  <text x="292" y="373" class="label label-light">SEPARATE</text>
+  <text x="292" y="390" class="sublabel sublabel-light">BS-RoFormer</text>
+  <text x="292" y="405" class="sublabel sublabel-light">Voice Isolation</text>
+
+  <!-- Stage 3: ANALYZE -->
+  <text x="452" y="340" class="num">3</text>
+  <rect x="390" y="345" width="155" height="75" class="box box-pipeline" />
+  <text x="467" y="373" class="label label-light">ANALYZE</text>
+  <text x="467" y="390" class="sublabel sublabel-light">Spectrum Profiler</text>
+  <text x="467" y="405" class="sublabel sublabel-light">Auto-EQ Params</text>
+
+  <!-- Stage 4: DENOISE -->
+  <text x="627" y="340" class="num">4</text>
+  <rect x="565" y="345" width="155" height="75" class="box box-pipeline" />
+  <text x="642" y="373" class="label label-light">DENOISE</text>
+  <text x="642" y="390" class="sublabel sublabel-light">VoiceRestore</text>
+  <text x="642" y="405" class="sublabel sublabel-light">BigVGAN 24kHz</text>
+
+  <!-- Stage 5: UPSCALE -->
+  <text x="802" y="340" class="num">5</text>
+  <rect x="740" y="345" width="155" height="75" class="box box-pipeline" />
+  <text x="817" y="373" class="label label-light">UPSCALE</text>
+  <text x="817" y="390" class="sublabel sublabel-light">AudioSR Diffusion</text>
+  <text x="817" y="405" class="sublabel sublabel-light">→ 48kHz HD</text>
+
+  <!-- Stage 6: MASTER -->
+  <text x="977" y="340" class="num">6</text>
+  <rect x="915" y="345" width="155" height="75" class="box box-output" />
+  <text x="992" y="373" class="label label-light">MASTER</text>
+  <text x="992" y="390" class="sublabel sublabel-light">Harman Curve EQ</text>
+  <text x="992" y="405" class="sublabel sublabel-light">Pedalboard DSP</text>
+
+  <!-- Pipeline arrows -->
+  <path d="M 195 383 L 215 383" class="arrow" style="stroke:#F5B731;" />
+  <path d="M 370 383 L 390 383" class="arrow" style="stroke:#F5B731;" />
+  <path d="M 545 383 L 565 383" class="arrow" style="stroke:#F5B731;" />
+  <path d="M 720 383 L 740 383" class="arrow" style="stroke:#F5B731;" />
+  <path d="M 895 383 L 915 383" class="arrow" style="stroke:#F5B731;" />
+
+  <!-- IPC data flow arrows (main → backend) -->
+  <path d="M 160 215 L 160 240 L 117 240 L 117 345" class="arrow-data" />
+
+  <!-- Section: HARMAN CURVE DETAIL -->
+  <text x="40" y="460" class="section-label">MASTERING CHAIN — HARMAN TARGET CURVE (SEAN OLIVE ET AL. 2013-2018)</text>
+  <line x1="40" y1="467" x2="700" y2="467" stroke="#D8D3BE" stroke-width="2" />
+
+  <!-- EQ Bands -->
+  <rect x="40" y="480" width="130" height="55" class="box" style="fill:#C9382D;" />
+  <text x="105" y="505" class="label label-light" style="font-size:10px;">HPF</text>
+  <text x="105" y="520" class="sublabel sublabel-light">25Hz subsonic</text>
+
+  <rect x="185" y="480" width="130" height="55" class="box box-accent" />
+  <text x="250" y="505" class="label label-dark" style="font-size:10px;">BASS SHELF</text>
+  <text x="250" y="520" class="sublabel">+4dB @ 105Hz</text>
+
+  <rect x="330" y="480" width="130" height="55" class="box box-stage" />
+  <text x="395" y="505" class="label label-dark" style="font-size:10px;">MUD CUT</text>
+  <text x="395" y="520" class="sublabel">-1.5dB @ 250Hz</text>
+
+  <rect x="475" y="480" width="130" height="55" class="box box-electron" />
+  <text x="540" y="505" class="label label-light" style="font-size:10px;">PRESENCE</text>
+  <text x="540" y="520" class="sublabel sublabel-light">+1.5dB @ 3kHz</text>
+
+  <rect x="620" y="480" width="130" height="55" class="box box-stage" />
+  <text x="685" y="505" class="label label-dark" style="font-size:10px;">DE-HARSH</text>
+  <text x="685" y="520" class="sublabel">-1dB @ 6.5kHz</text>
+
+  <rect x="765" y="480" width="140" height="55" class="box box-accent" />
+  <text x="835" y="505" class="label label-dark" style="font-size:10px;">TREBLE ROLL</text>
+  <text x="835" y="520" class="sublabel">-2.5dB @ 10kHz</text>
+
+  <rect x="920" y="480" width="130" height="55" class="box" style="fill:#C9382D;" />
+  <text x="985" y="505" class="label label-light" style="font-size:10px;">LPF</text>
+  <text x="985" y="520" class="sublabel sublabel-light">18kHz air rolloff</text>
+
+  <!-- EQ arrows -->
+  <path d="M 170 507 L 185 507" class="arrow" style="stroke:#F5B731;stroke-width:1.5;" />
+  <path d="M 315 507 L 330 507" class="arrow" style="stroke:#F5B731;stroke-width:1.5;" />
+  <path d="M 460 507 L 475 507" class="arrow" style="stroke:#F5B731;stroke-width:1.5;" />
+  <path d="M 605 507 L 620 507" class="arrow" style="stroke:#F5B731;stroke-width:1.5;" />
+  <path d="M 750 507 L 765 507" class="arrow" style="stroke:#F5B731;stroke-width:1.5;" />
+  <path d="M 905 507 L 920 507" class="arrow" style="stroke:#F5B731;stroke-width:1.5;" />
+
+  <!-- Section: OUTPUT -->
+  <text x="40" y="575" class="section-label">OUTPUT + DISTRIBUTION</text>
+  <line x1="40" y1="582" x2="400" y2="582" stroke="#D8D3BE" stroke-width="2" />
+
+  <!-- Output paths -->
+  <rect x="40" y="595" width="200" height="70" class="box box-electron" />
+  <text x="140" y="623" class="label label-light">EXPORT</text>
+  <text x="140" y="640" class="sublabel sublabel-light">24-bit WAV / FLAC</text>
+  <text x="140" y="655" class="sublabel sublabel-light">~/Music/Voxis Restored/</text>
+
+  <rect x="270" y="595" width="200" height="70" class="box box-accent" />
+  <text x="370" y="623" class="label label-dark">DISTRIBUTION</text>
+  <text x="370" y="640" class="sublabel">Homebrew Cask · DMG</text>
+  <text x="370" y="655" class="sublabel">curl installer · GitHub</text>
+
+  <rect x="500" y="595" width="200" height="70" class="box box-pipeline" />
+  <text x="600" y="623" class="label label-light">SIDECAR</text>
+  <text x="600" y="640" class="sublabel sublabel-light">PyInstaller Binary</text>
+  <text x="600" y="655" class="sublabel sublabel-light">trinity_v8_core (628MB)</text>
+
+  <!-- Arrow from Stage 6 to Export -->
+  <path d="M 992 420 L 992 560 L 140 560 L 140 595" class="arrow" style="stroke:#C9382D;" />
+
+  <!-- Section: TECH STACK -->
+  <text x="40" y="705" class="section-label">TECHNOLOGY STACK</text>
+  <line x1="40" y1="712" x2="300" y2="712" stroke="#D8D3BE" stroke-width="2" />
+
+  <!-- Tech badges -->
+  <rect x="40" y="720" width="110" height="30" rx="15" fill="#1A1A1A" stroke="#1A1A1A" stroke-width="2" />
+  <text x="95" y="740" style="font-size:9px;font-weight:900;letter-spacing:2px;text-anchor:middle;fill:#FFFFFF;">ELECTRON 35</text>
+
+  <rect x="160" y="720" width="100" height="30" rx="15" fill="#2B5EA0" stroke="#1A1A1A" stroke-width="2" />
+  <text x="210" y="740" style="font-size:9px;font-weight:900;letter-spacing:2px;text-anchor:middle;fill:#FFFFFF;">REACT 19</text>
+
+  <rect x="270" y="720" width="85" height="30" rx="15" fill="#F5B731" stroke="#1A1A1A" stroke-width="2" />
+  <text x="312" y="740" style="font-size:9px;font-weight:900;letter-spacing:2px;text-anchor:middle;fill:#1A1A1A;">VITE 7</text>
+
+  <rect x="365" y="720" width="110" height="30" rx="15" fill="#C9382D" stroke="#1A1A1A" stroke-width="2" />
+  <text x="420" y="740" style="font-size:9px;font-weight:900;letter-spacing:2px;text-anchor:middle;fill:#FFFFFF;">PYTHON 3.11</text>
+
+  <rect x="485" y="720" width="120" height="30" rx="15" fill="#1A1A1A" stroke="#F5B731" stroke-width="2" />
+  <text x="545" y="740" style="font-size:9px;font-weight:900;letter-spacing:2px;text-anchor:middle;fill:#F5B731;">PYINSTALLER</text>
+
+  <rect x="615" y="720" width="110" height="30" rx="15" fill="#EDE8D0" stroke="#1A1A1A" stroke-width="2" />
+  <text x="670" y="740" style="font-size:9px;font-weight:900;letter-spacing:2px;text-anchor:middle;fill:#1A1A1A;">PEDALBOARD</text>
+
+  <rect x="735" y="720" width="120" height="30" rx="15" fill="#2B5EA0" stroke="#1A1A1A" stroke-width="2" />
+  <text x="795" y="740" style="font-size:9px;font-weight:900;letter-spacing:2px;text-anchor:middle;fill:#FFFFFF;">BS-ROFORMER</text>
+
+  <rect x="865" y="720" width="100" height="30" rx="15" fill="#F5B731" stroke="#1A1A1A" stroke-width="2" />
+  <text x="915" y="740" style="font-size:9px;font-weight:900;letter-spacing:2px;text-anchor:middle;fill:#1A1A1A;">AUDIOSR</text>
+
+  <rect x="975" y="720" width="115" height="30" rx="15" fill="#C9382D" stroke="#1A1A1A" stroke-width="2" />
+  <text x="1032" y="740" style="font-size:9px;font-weight:900;letter-spacing:2px;text-anchor:middle;fill:#FFFFFF;">VOICERESTORE</text>
+
+  <!-- Footer -->
+  <rect x="0" y="775" width="1200" height="45" fill="#1A1A1A" />
+  <text x="40" y="802" style="font-size:9px;font-weight:700;letter-spacing:3px;fill:rgba(255,255,255,0.45);">COPYRIGHT © 2026 GLASS STONE LLC</text>
+  <text x="400" y="802" style="font-size:9px;font-weight:700;letter-spacing:3px;fill:rgba(255,255,255,0.3);">|</text>
+  <text x="430" y="802" style="font-size:9px;font-weight:700;letter-spacing:3px;fill:rgba(255,255,255,0.45);">CEO: GABRIEL B. RODRIGUEZ</text>
+  <text x="760" y="802" style="font-size:9px;font-weight:700;letter-spacing:3px;fill:rgba(255,255,255,0.3);">|</text>
+  <text x="790" y="802" style="font-size:9px;font-weight:700;letter-spacing:3px;fill:rgba(255,255,255,0.45);">POWERED BY TRINITY V8.1</text>
+</svg>

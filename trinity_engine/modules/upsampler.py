@@ -137,6 +137,11 @@ class TrinityUpscaler:
                 )
 
             if waveform is not None:
+                # AudioSR may return numpy array or torch tensor
+                import numpy as np
+                if isinstance(waveform, np.ndarray):
+                    waveform = torch.from_numpy(waveform)
+
                 # Force to CPU immediately for saving
                 if hasattr(waveform, 'cpu'):
                     waveform = waveform.cpu()

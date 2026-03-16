@@ -3,7 +3,7 @@
 // CEO: Gabriel B. Rodriguez | Powered by Trinity V8.1
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { motion, type Variants } from 'framer-motion';
+import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import './Bauhaus.css';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -21,11 +21,11 @@ interface Step {
 // ── Constants ───────────────────────────────────────────────────────────────
 const STEPS: Step[] = [
   { id: 1, label: 'INGEST',   sublabel: 'FFmpeg Universal Decode',      matchStr: '[1/6]' },
-  { id: 2, label: 'SEPARATE', sublabel: 'Glass Stone Voice Isolation',   matchStr: '[2/6]' },
-  { id: 3, label: 'ANALYZE',  sublabel: 'Spectrum Noise Profile',        matchStr: '[3/6]' },
-  { id: 4, label: 'DENOISE',  sublabel: 'DeepFilterNet3 Enhancement',    matchStr: '[4/6]' },
-  { id: 5, label: 'UPSCALE',  sublabel: 'Trinity AudioSR Diffusion',     matchStr: '[5/6]' },
-  { id: 6, label: 'MASTER',   sublabel: 'Phase Limit & Stereo Width',    matchStr: '[6/6]' },
+  { id: 2, label: 'SEPARATE', sublabel: 'BS-RoFormer Voice Isolation',   matchStr: '[2/6]' },
+  { id: 3, label: 'ANALYZE',  sublabel: 'Spectrum + Auto-EQ Profile',    matchStr: '[3/6]' },
+  { id: 4, label: 'DENOISE',  sublabel: 'VoiceRestore Enhancement',      matchStr: '[4/6]' },
+  { id: 5, label: 'UPSCALE',  sublabel: 'AudioSR Diffusion → 48kHz',    matchStr: '[5/6]' },
+  { id: 6, label: 'MASTER',   sublabel: 'Harman Curve Mastering',        matchStr: '[6/6]' },
   { id: 7, label: 'EXPORT',   sublabel: '24-bit WAV / FLAC Output',      matchStr: 'Finalizing Export' },
 ];
 
@@ -445,17 +445,42 @@ export default function App() {
                 const isDone    = currentStep > step.id || (status === 'done' && currentStep >= step.id);
                 const isPending = currentStep < step.id && !isActive;
                 return (
-                  <div
+                  <motion.div
                     key={step.id}
                     className={`pipeline-step ${isActive ? 'step-active' : ''} ${isDone ? 'step-done' : ''} ${isPending ? 'step-pending' : ''}`}
+                    initial={{ opacity: 0, x: -12 }}
+                    animate={{
+                      opacity: isPending ? 0.45 : 1,
+                      x: 0,
+                      scale: isActive ? 1.02 : 1,
+                    }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 28, delay: step.id * 0.04 }}
+                    layout
                   >
-                    <div className="step-indicator">{isDone ? '■' : isActive ? '▶' : '○'}</div>
+                    <motion.div
+                      className="step-indicator"
+                      animate={isActive ? { scale: [1, 1.3, 1] } : { scale: 1 }}
+                      transition={isActive ? { repeat: Infinity, duration: 1.2, ease: 'easeInOut' } : {}}
+                    >
+                      {isDone ? '■' : isActive ? '▶' : '○'}
+                    </motion.div>
                     <div className="step-body">
                       <span className="step-label">{step.label}</span>
-                      <span className="step-sublabel">{step.sublabel}</span>
+                      <AnimatePresence mode="wait">
+                        <motion.span
+                          key={isActive ? 'active' : 'default'}
+                          className="step-sublabel"
+                          initial={{ opacity: 0, y: 4 }}
+                          animate={{ opacity: isActive ? 1 : 0.65, y: 0 }}
+                          exit={{ opacity: 0, y: -4 }}
+                          transition={{ duration: 0.2 }}
+                        >
+                          {isActive ? `Processing ${step.sublabel}...` : step.sublabel}
+                        </motion.span>
+                      </AnimatePresence>
                     </div>
                     <div className="step-num">{String(step.id).padStart(2, '0')}</div>
-                  </div>
+                  </motion.div>
                 );
               })}
             </div>
@@ -498,28 +523,77 @@ export default function App() {
             </div>
           </div>
 
-          {isRunning && (
-            <div className="progress-bar-outer">
-              <div className="progress-bar-inner" style={{ width: `${progress}%` }} />
-            </div>
-          )}
+          <AnimatePresence>
+            {isRunning && (
+              <motion.div
+                className="progress-bar-outer"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                <motion.div
+                  className="progress-bar-inner"
+                  animate={{ width: `${progress}%` }}
+                  transition={{ type: 'spring', stiffness: 80, damping: 20 }}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <div className="status-badges">
-            {status === 'done' && outputFile && (
-              <div className="badge badge-done">■ COMPLETE — {basename(outputFile)}</div>
-            )}
-            {status === 'error' && (
-              <div className="badge badge-error">■ ENGINE ERROR — CHECK LOG</div>
-            )}
-            {status === 'idle' && (
-              <div className="badge badge-idle">○ STANDBY</div>
-            )}
+            <AnimatePresence mode="wait">
+              {status === 'done' && outputFile && (
+                <motion.div
+                  key="done"
+                  className="badge badge-done"
+                  initial={{ opacity: 0, scale: 0.8, y: 6 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.8 }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 22 }}
+                >
+                  ■ COMPLETE — {basename(outputFile)}
+                </motion.div>
+              )}
+              {status === 'error' && (
+                <motion.div
+                  key="error"
+                  className="badge badge-error"
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0 }}
+                >
+                  ■ ENGINE ERROR — CHECK LOG
+                </motion.div>
+              )}
+              {status === 'idle' && (
+                <motion.div
+                  key="idle"
+                  className="badge badge-idle"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                >
+                  ○ STANDBY
+                </motion.div>
+              )}
+              {isRunning && (
+                <motion.div
+                  key="running"
+                  className="badge badge-running"
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0 }}
+                >
+                  ▶ STEP {currentStep}/{STEPS.length} — {STEPS[Math.max(0, currentStep - 1)]?.label ?? 'INIT'}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           <div className="log-viewer">
             {logs.map((line, i) => (
-              <div
-                key={i}
+              <motion.div
+                key={`${i}-${line.slice(0, 20)}`}
                 className={`log-line ${
                   line.startsWith('[ERROR]') || line.startsWith('>> [ERROR]')
                     ? 'log-error'
@@ -527,9 +601,12 @@ export default function App() {
                     ? 'log-step'
                     : ''
                 }`}
+                initial={{ opacity: 0, x: -6 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.15 }}
               >
                 {line}
-              </div>
+              </motion.div>
             ))}
             <div ref={logEndRef} />
           </div>

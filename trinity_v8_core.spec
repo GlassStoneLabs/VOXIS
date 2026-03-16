@@ -28,8 +28,13 @@ hiddenimports = [
     'scipy', 'scipy.signal', 'scipy.fftpack', 'scipy.io', 'scipy.io.wavfile',
     # DeepFilterNet
     'df', 'df.enhance', 'df.io', 'df.model', 'df.config', 'df.logger',
-    # audio-separator
+    # audio-separator (all architecture backends required at runtime)
     'audio_separator', 'audio_separator.separator',
+    'audio_separator.separator.architectures',
+    'audio_separator.separator.architectures.mdxc_separator',
+    'audio_separator.separator.architectures.mdx_separator',
+    'audio_separator.separator.architectures.vr_separator',
+    'audio_separator.separator.architectures.demucs_separator',
     'onnxruntime', 'onnxruntime.capi',
     # AudioSR
     'audiosr',

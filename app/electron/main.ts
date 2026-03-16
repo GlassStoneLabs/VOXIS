@@ -8,6 +8,7 @@ import { createInterface } from 'readline';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as http from 'http';
+import * as os from 'os';
 
 let mainWindow: BrowserWindow | null = null;
 let activeProcess: ChildProcess | null = null;
@@ -144,11 +145,12 @@ ipcMain.handle(
       );
     }
 
-    // --- Derive output path ---
-    const dir     = path.dirname(filePath);
+    // --- Derive output path (~/Music/Voxis Restored/) ---
+    const restoredDir = path.join(os.homedir(), 'Music', 'Voxis Restored');
+    fs.mkdirSync(restoredDir, { recursive: true });
     const stem    = path.basename(filePath, path.extname(filePath));
     const outExt  = safeFormat === 'FLAC' ? 'flac' : 'wav';
-    const outPath = path.join(dir, `${stem}_voxis_mastered.${outExt}`);
+    const outPath = path.join(restoredDir, `${stem}_voxis_mastered.${outExt}`);
 
     // --- Build args ---
     const args: string[] = [
