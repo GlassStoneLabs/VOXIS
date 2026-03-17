@@ -5,7 +5,7 @@ Version   : 4.0.0
 Engine    : Trinity V8.1
 Company   : Glass Stone LLC
 CEO       : Gabriel B. Rodriguez
-Location  : York, PA, USA
+Location  : PA, USA
 Year      : 2026
 Timestamp : 2026-02-28T00:00:00 EST
 
@@ -52,6 +52,6 @@ DAMAGES, OR OTHER LIABILITY ARISING FROM USE OF THE SOFTWARE.
 GOVERNING LAW: Commonwealth of Pennsylvania, United States of America.
 
 ────────────────────────────────────────────────────────────────────────────────
-Glass Stone LLC | York, PA | CEO: Gabriel B. Rodriguez | © 2026
+Glass Stone LLC |  PA | CEO: Gabriel B. Rodriguez | © 2026
 VOXIS 4.0 DENSE — Powered by Trinity V8.1
 ────────────────────────────────────────────────────────────────────────────────
