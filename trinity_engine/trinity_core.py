@@ -27,6 +27,10 @@ warnings.filterwarnings("ignore", message="urllib3.*doesn't match a supported ve
 warnings.filterwarnings("ignore", message="chardet.*doesn't match a supported version")
 warnings.filterwarnings("ignore", message="charset_normalizer.*doesn't match a supported version")
 warnings.filterwarnings("ignore", message="`torchaudio.backend.common.AudioMetaData` has been moved")
+# torch FutureWarnings from rotary_embedding_torch and weight_norm
+warnings.filterwarnings("ignore", category=FutureWarning, message=".*torch.cuda.amp.autocast.*")
+warnings.filterwarnings("ignore", category=FutureWarning, message=".*torch.amp.autocast.*")
+warnings.filterwarnings("ignore", category=FutureWarning, message=".*torch.nn.utils.weight_norm.*")
 
 # Enable MPS fallback for ops not supported on Apple Silicon (e.g. AudioSR channels)
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")

@@ -205,13 +205,28 @@ ipcMain.handle(
       });
 
       // Stream stderr (Python tqdm / torch progress writes to stderr)
+      // Filter out known noisy-but-harmless warnings from third-party libs
+      const STDERR_SUPPRESS = [
+        'FutureWarning',
+        'torch.cuda.amp.autocast',
+        'torch.amp.autocast',
+        'torch.nn.utils.weight_norm',
+        'WeightNorm.apply',
+        'rotary_embedding_torch',
+        'warnings.warn',
+        '% |',          // tqdm progress bars
+        'it/s]',        // tqdm speed indicator
+        'it, ',         // tqdm counter
+      ];
       const stderrRL = child.stderr
         ? createInterface({ input: child.stderr })
         : null;
 
       stderrRL?.on('line', (line: string) => {
         const trimmed = line.trim();
-        if (trimmed) send('trinity-log', `[STDERR] ${trimmed}`);
+        if (!trimmed) return;
+        if (STDERR_SUPPRESS.some(pat => trimmed.includes(pat))) return;
+        send('trinity-log', `[STDERR] ${trimmed}`);
       });
 
       child.on('error', (err: Error) => {
