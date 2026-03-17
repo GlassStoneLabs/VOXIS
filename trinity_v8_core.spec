@@ -36,8 +36,10 @@ hiddenimports = [
     'audio_separator.separator.architectures.vr_separator',
     'audio_separator.separator.architectures.demucs_separator',
     'onnxruntime', 'onnxruntime.capi',
-    # AudioSR
-    'audiosr',
+    # AudioSR (latent diffusion upsampler)
+    'audiosr', 'audiosr.pipeline', 'audiosr.lowpass',
+    'audiosr.clap', 'audiosr.latent_diffusion',
+    'audiosr.utils',
     # Pedalboard
     'pedalboard', 'pedalboard._pedalboard',
     # HuggingFace / transformers
@@ -83,6 +85,10 @@ except Exception:
     pass
 try:
     datas += collect_data_files('audio_separator', includes=['**/*'])
+except Exception:
+    pass
+try:
+    datas += collect_data_files('audiosr', includes=['**/*'])
 except Exception:
     pass
 try:

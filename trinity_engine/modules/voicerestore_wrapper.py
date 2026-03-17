@@ -118,10 +118,35 @@ class VoiceRestoreWrapper:
             print(f"[{self.__class__.__name__}] Failed to initialize: {e}")
             self.model = None
 
+    # ── Chunked inference settings ─────────────────────────────────────────
+    CHUNK_SECONDS = 30        # Process audio in 30-second chunks
+    OVERLAP_SECONDS = 2       # 2-second overlap for crossfade between chunks
+    MAX_SINGLE_SECONDS = 45   # Files ≤45s go through in one shot (no chunking)
+
+    def _infer_chunk(self, chunk_tensor):
+        """Run VoiceRestore inference on a single chunk (already on device)."""
+        with torch.inference_mode():
+            restored = self.model(chunk_tensor, steps=self.steps, cfg_strength=self.cfg_strength)
+            restored = restored.squeeze(0).float().cpu()
+            return torch.clamp(restored, -1.0, 1.0)
+
+    def _crossfade(self, left, right, fade_len):
+        """Apply linear crossfade between two overlapping 1D tensors."""
+        if fade_len <= 0 or left.shape[-1] < fade_len or right.shape[-1] < fade_len:
+            return torch.cat([left, right], dim=-1)
+        fade_out = torch.linspace(1.0, 0.0, fade_len)
+        fade_in  = torch.linspace(0.0, 1.0, fade_len)
+        # Apply fade to the overlap region
+        left_end  = left[..., -fade_len:] * fade_out
+        right_start = right[..., :fade_len] * fade_in
+        blended = left_end + right_start
+        return torch.cat([left[..., :-fade_len], blended, right[..., fade_len:]], dim=-1)
+
     def process(self, input_audio_path, noise_profile=None, attenuation_db=None, stage="pre-diffusion"):
         """
-        Universal Restoration inference API. Expected sequence:
-        Load -> Mono Mixdown -> Flow-matching Inference -> Save
+        Universal Restoration inference API with automatic chunking.
+        Files >45s are split into 30s chunks with 2s crossfade overlap
+        to prevent OOM on CPU/MPS (BigVGAN memory scales quadratically).
         """
         self._initialize_model()
 
@@ -137,17 +162,53 @@ class VoiceRestoreWrapper:
 
         try:
             audio, orig_sr = torchaudio.load(input_audio_path)
-            # BigVGAN has hardcoded limits — clamp input audio to safe range
             audio = torch.clamp(audio, -1.0, 1.0)
 
             # Convert to mono if stereo (VoiceRestore expects mono)
             audio = audio.mean(dim=0, keepdim=True) if audio.dim() > 1 and audio.shape[0] > 1 else audio
-            audio = audio.to(self.device)
 
-            with torch.inference_mode():
-                restored_wav = self.model(audio, steps=self.steps, cfg_strength=self.cfg_strength)
-                restored_wav = restored_wav.squeeze(0).float().cpu()
-                restored_wav = torch.clamp(restored_wav, -1.0, 1.0)
+            duration_sec = audio.shape[-1] / orig_sr
+
+            if duration_sec <= self.MAX_SINGLE_SECONDS:
+                # ── Short file: process in one shot ──
+                print(f"[{self.__class__.__name__}] Single-pass ({duration_sec:.1f}s)")
+                audio = audio.to(self.device)
+                restored_wav = self._infer_chunk(audio)
+            else:
+                # ── Long file: chunked inference with crossfade ──
+                chunk_samples   = int(self.CHUNK_SECONDS * orig_sr)
+                overlap_samples = int(self.OVERLAP_SECONDS * orig_sr)
+                stride          = chunk_samples - overlap_samples
+                total_samples   = audio.shape[-1]
+                num_chunks      = max(1, (total_samples - overlap_samples + stride - 1) // stride)
+
+                print(f"[{self.__class__.__name__}] Chunked mode: {duration_sec:.1f}s → "
+                      f"{num_chunks} chunks ({self.CHUNK_SECONDS}s + {self.OVERLAP_SECONDS}s overlap)")
+
+                # Compute output overlap in model's target sample rate (24kHz)
+                target_sr = self.model.target_sample_rate
+                out_overlap = int(self.OVERLAP_SECONDS * target_sr)
+
+                restored_chunks = []
+                for i in range(num_chunks):
+                    start = i * stride
+                    end   = min(start + chunk_samples, total_samples)
+                    chunk = audio[..., start:end].to(self.device)
+
+                    print(f"[{self.__class__.__name__}] Chunk {i+1}/{num_chunks} "
+                          f"({start/orig_sr:.1f}s–{end/orig_sr:.1f}s)")
+
+                    chunk_out = self._infer_chunk(chunk)
+                    restored_chunks.append(chunk_out)
+
+                    # Free memory between chunks
+                    del chunk
+                    self._cleanup()
+
+                # ── Stitch chunks with crossfade ──
+                restored_wav = restored_chunks[0]
+                for i in range(1, len(restored_chunks)):
+                    restored_wav = self._crossfade(restored_wav, restored_chunks[i], out_overlap)
 
             # Ensure at least 2D for torchaudio.save
             if restored_wav.dim() == 1:
