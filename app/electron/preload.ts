@@ -45,14 +45,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   file: {
-    // Copy outputFile to a user-chosen destination (Save As)
     copy: (src: string, dest: string): Promise<void> =>
       ipcRenderer.invoke('file:copy', src, dest),
 
-    // Convert an absolute local path to a voxis-file:// URL for <audio> preview
     toPreviewUrl: (absPath: string): string => {
-      const encoded = absPath.split('/').map(encodeURIComponent).join('/');
+      const normalized = absPath.replace(/\\/g, '/');
+      const encoded = normalized.split('/').map(encodeURIComponent).join('/');
       return `voxis-file://${encoded}`;
     },
+  },
+
+  update: {
+    onStatus: (cb: (s: { type: string; version?: string; percent?: number }) => void): void => {
+      ipcRenderer.on('update-status', (_event, data) => cb(data));
+    },
+    download: (): Promise<void> => ipcRenderer.invoke('update:download'),
+    install:  (): void => { ipcRenderer.invoke('update:install'); },
   },
 });

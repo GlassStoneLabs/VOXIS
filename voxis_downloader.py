@@ -1,3 +1,7 @@
+# VOXIS V4.0.0 DENSE — Model & Asset Downloader
+# Copyright © 2026 Glass Stone LLC. All Rights Reserved.
+# CEO: Gabriel B. Rodriguez
+
 import httpx
 import hashlib
 from pathlib import Path

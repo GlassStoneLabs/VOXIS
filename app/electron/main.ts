@@ -3,6 +3,7 @@
 // Powered by Trinity V8.1 | Built by Glass Stone
 
 import { app, BrowserWindow, dialog, ipcMain, shell, nativeImage, protocol, net } from 'electron';
+import { autoUpdater } from 'electron-updater';
 import { spawn, ChildProcess } from 'child_process';
 import { createInterface } from 'readline';
 import * as path from 'path';
@@ -10,7 +11,11 @@ import * as fs from 'fs';
 import * as http from 'http';
 import * as os from 'os';
 
-// Register custom scheme for local audio preview (must be before app.whenReady)
+// Auto-updater: check on launch, prompt user — no silent download
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = false;
+
+// voxis-file:// — local audio streaming; must precede app.whenReady
 protocol.registerSchemesAsPrivileged([
   { scheme: 'voxis-file', privileges: { stream: true, bypassCSP: true, supportFetchAPI: true, corsEnabled: true } },
 ]);
@@ -24,10 +29,11 @@ const isDev = !app.isPackaged;
 // Helpers
 // ---------------------------------------------------------------------------
 function getSidecarPath(): string {
+  const binaryName = process.platform === 'win32' ? 'trinity_v8_core.exe' : 'trinity_v8_core';
   if (isDev) {
-    return path.join(__dirname, '..', 'resources', 'bin', 'trinity_v8_core');
+    return path.join(__dirname, '..', 'resources', 'bin', binaryName);
   }
-  return path.join(process.resourcesPath, 'bin', 'trinity_v8_core');
+  return path.join(process.resourcesPath, 'bin', binaryName);
 }
 
 function errMsg(e: unknown): string {
@@ -156,7 +162,6 @@ ipcMain.handle(
     const stem   = path.basename(filePath, path.extname(filePath));
     const outExt = safeFormat === 'FLAC' ? 'flac' : 'wav';
     const base   = path.join(restoredDir, `${stem}_voxis_mastered.${outExt}`);
-    // Avoid silently overwriting previous output
     let outPath = base;
     let collision = 1;
     while (fs.existsSync(outPath)) {
@@ -269,7 +274,7 @@ ipcMain.handle('dialog:saveFile', async (_event, defaultName: string, ext: strin
 });
 
 // ---------------------------------------------------------------------------
-// IPC: Copy file (used by Save-As)
+// IPC: Copy file
 // ---------------------------------------------------------------------------
 ipcMain.handle('file:copy', (_event, src: string, dest: string) => {
   if (typeof src !== 'string' || typeof dest !== 'string') return;
@@ -277,12 +282,29 @@ ipcMain.handle('file:copy', (_event, src: string, dest: string) => {
 });
 
 // ---------------------------------------------------------------------------
+// Auto-updater events (production only — no-op in dev)
+// ---------------------------------------------------------------------------
+autoUpdater.on('update-available', (info) => {
+  mainWindow?.webContents.send('update-status', { type: 'available', version: info.version });
+});
+autoUpdater.on('download-progress', (p) => {
+  mainWindow?.webContents.send('update-status', { type: 'progress', percent: Math.round(p.percent) });
+});
+autoUpdater.on('update-downloaded', () => {
+  mainWindow?.webContents.send('update-status', { type: 'downloaded' });
+});
+autoUpdater.on('error', () => {
+  // Silently ignore update check errors (offline, network issues, etc.)
+});
+
+ipcMain.handle('update:download', () => autoUpdater.downloadUpdate());
+ipcMain.handle('update:install',  () => autoUpdater.quitAndInstall());
+
+// ---------------------------------------------------------------------------
 // App lifecycle
 // ---------------------------------------------------------------------------
 app.whenReady().then(() => {
-  // Serve local audio files for in-app preview via voxis-file://
   protocol.handle('voxis-file', (req) => {
-    // req.url = 'voxis-file:///Users/...' → strip scheme → '/Users/...'
     const filePath = decodeURIComponent(req.url.replace('voxis-file://', ''));
     return net.fetch('file://' + filePath);
   });
@@ -297,7 +319,13 @@ app.whenReady().then(() => {
       if (!dockIcon.isEmpty()) app.dock?.setIcon(dockIcon);
     } catch { /* icon not found — use default */ }
   }
-  createWindow();
+
+  createWindow().then(() => {
+    // Check for updates after window is ready (production only)
+    if (app.isPackaged) {
+      autoUpdater.checkForUpdates().catch(() => {});
+    }
+  });
 });
 
 app.on('window-all-closed', () => {

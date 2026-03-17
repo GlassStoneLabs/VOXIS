@@ -88,6 +88,9 @@ export default function App() {
   const [autoHPF,   setAutoHPF]   = useState<number | null>(null);
   const [autoVocal, setAutoVocal] = useState<number | null>(null);
 
+  // Update notification
+  const [updateStatus, setUpdateStatus] = useState<{ type: string; version?: string; percent?: number } | null>(null);
+
   // Preview player
   const [previewUrl,    setPreviewUrl]    = useState<string | null>(null);
   const [isPlaying,     setIsPlaying]     = useState(false);
@@ -107,6 +110,11 @@ export default function App() {
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
+
+  // Subscribe to update notifications from main process
+  useEffect(() => {
+    window.electronAPI.update.onStatus(setUpdateStatus);
+  }, []);
 
   // Cleanup IPC listeners on unmount
   useEffect(() => {
@@ -258,6 +266,41 @@ export default function App() {
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="bauhaus-container">
+
+      {/* ── UPDATE BANNER ── */}
+      <AnimatePresence>
+        {updateStatus && (
+          <motion.div
+            className="update-banner"
+            initial={{ opacity: 0, y: -32 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -32 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+          >
+            {updateStatus.type === 'available' && (
+              <>
+                <span>UPDATE AVAILABLE — v{updateStatus.version}</span>
+                <motion.button className="btn-update" onClick={() => window.electronAPI.update.download()}
+                  whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}>
+                  DOWNLOAD
+                </motion.button>
+              </>
+            )}
+            {updateStatus.type === 'progress' && (
+              <span>DOWNLOADING UPDATE... {updateStatus.percent ?? 0}%</span>
+            )}
+            {updateStatus.type === 'downloaded' && (
+              <>
+                <span>UPDATE READY — RESTART TO APPLY</span>
+                <motion.button className="btn-update btn-update-install" onClick={() => window.electronAPI.update.install()}
+                  whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}>
+                  RESTART &amp; INSTALL
+                </motion.button>
+              </>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── HEADER ── */}
       <header className="header-grid">
@@ -662,7 +705,6 @@ export default function App() {
                 exit={{ opacity: 0, height: 0 }}
                 transition={{ type: 'spring', stiffness: 260, damping: 28 }}
               >
-                {/* Hidden native audio element */}
                 <audio
                   ref={audioRef}
                   src={previewUrl}
