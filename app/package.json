@@ -34,7 +34,7 @@
   },
   "build": {
     "appId": "com.glassstone.voxis",
-    "productName": "Voxis 4.0 DENSE",
+    "productName": "Voxis",
     "mac": {
       "category": "public.app-category.music",
       "target": [
@@ -50,7 +50,7 @@
       "darkModeSupport": false
     },
     "dmg": {
-      "title": "VOXIS 4.0 DENSE",
+      "title": "VOXIS",
       "icon": "resources/icons/icon.icns",
       "iconSize": 128,
       "window": {

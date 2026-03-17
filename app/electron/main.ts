@@ -65,7 +65,7 @@ async function createWindow() {
     minWidth: 900,
     minHeight: 700,
     titleBarStyle: 'hiddenInset',
-    title: 'VOXIS 4.0 DENSE — Glass Stone LLC',
+    title: 'VOXIS — Glass Stone LLC',
     icon: path.join(__dirname, '..', 'resources', 'icons', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

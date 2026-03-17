@@ -1,20 +1,20 @@
 #!/bin/bash
-# VOXIS 4.0 DENSE — One-line Installer
+# VOXIS — One-line Installer
 # Copyright (c) 2026 Glass Stone LLC. All Rights Reserved.
 #
 # Usage: curl -fsSL https://raw.githubusercontent.com/GlassStoneLabs/VOXIS/main/install.sh | bash
 
 set -euo pipefail
 
-APP_NAME="Voxis 4.0 DENSE"
+APP_NAME="Voxis"
 VERSION="4.0.0"
-DMG_URL="https://github.com/GlassStoneLabs/VOXIS/releases/download/v${VERSION}/Voxis.4.0.DENSE-${VERSION}-arm64.dmg"
+DMG_URL="https://github.com/GlassStoneLabs/VOXIS/releases/download/v${VERSION}/Voxis-${VERSION}-arm64.dmg"
 DMG_FILE="/tmp/voxis-${VERSION}.dmg"
 MOUNT_POINT="/Volumes/${APP_NAME}"
 
 echo ""
 echo "  ╔══════════════════════════════════════════╗"
-echo "  ║  VOXIS 4.0 DENSE — Glass Stone LLC      ║"
+echo "  ║  VOXIS — Glass Stone LLC                 ║"
 echo "  ║  Professional Audio Restoration          ║"
 echo "  ║  Powered by Trinity V8.1                 ║"
 echo "  ╚══════════════════════════════════════════╝"
@@ -22,7 +22,7 @@ echo ""
 
 # Check architecture
 if [[ "$(uname -m)" != "arm64" ]]; then
-    echo "[ERROR] Voxis 4.0 DENSE requires Apple Silicon (arm64)."
+    echo "[ERROR] Voxis requires Apple Silicon (arm64)."
     exit 1
 fi
 
@@ -42,6 +42,12 @@ if ! command -v ffmpeg &>/dev/null; then
         echo "[ERROR] FFmpeg is required. Install it with: brew install ffmpeg"
         exit 1
     fi
+fi
+
+# Remove old "Voxis 4.0 DENSE" version if present
+if [[ -d "/Applications/Voxis 4.0 DENSE.app" ]]; then
+    echo ">> Removing old 'Voxis 4.0 DENSE' installation..."
+    rm -rf "/Applications/Voxis 4.0 DENSE.app"
 fi
 
 # Download DMG

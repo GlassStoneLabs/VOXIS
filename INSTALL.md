@@ -28,7 +28,7 @@ brew tap GlassStoneLabs/voxis
 brew install --cask voxis
 ```
 
-This installs **Voxis 4.0 DENSE.app** to `/Applications` and creates the output folder at `~/Music/Voxis Restored/`.
+This installs **Voxis.app** to `/Applications` and creates the output folder at `~/Music/Voxis Restored/`.
 
 To update to a newer version:
 
@@ -54,7 +54,7 @@ curl -fsSL https://raw.githubusercontent.com/GlassStoneLabs/VOXIS/main/install.s
 
 This will:
 1. Download the latest DMG from GitHub Releases
-2. Mount and copy **Voxis 4.0 DENSE.app** to `/Applications`
+2. Mount and copy **Voxis.app** to `/Applications`
 3. Create `~/Music/Voxis Restored/`
 4. Clean up temporary files
 
@@ -63,8 +63,8 @@ This will:
 ### Method 3 — Manual DMG Install
 
 1. Download the latest DMG from [GitHub Releases](https://github.com/GlassStoneLabs/VOXIS/releases)
-2. Open `Voxis 4.0 DENSE-4.0.0-arm64.dmg`
-3. Drag **Voxis 4.0 DENSE** to your Applications folder
+2. Open `Voxis-4.0.0-arm64.dmg`
+3. Drag **Voxis** to your Applications folder
 4. Eject the DMG
 
 ---
@@ -73,7 +73,7 @@ This will:
 
 On first launch, macOS may show a security prompt:
 
-> "Voxis 4.0 DENSE" can't be opened because Apple cannot check it for malicious software.
+> "Voxis" can't be opened because Apple cannot check it for malicious software.
 
 To resolve this:
 
@@ -82,7 +82,7 @@ To resolve this:
 3. Click **"Open Anyway"** next to the Voxis message
 4. Alternatively, run in Terminal:
    ```bash
-   xattr -cr "/Applications/Voxis 4.0 DENSE.app"
+   xattr -cr "/Applications/Voxis.app"
    ```
 
 ---
@@ -187,7 +187,7 @@ cp dist/trinity_v8_core app/resources/bin/
 
 | Issue | Solution |
 |---|---|
-| "App can't be opened" | Run `xattr -cr "/Applications/Voxis 4.0 DENSE.app"` |
+| "App can't be opened" | Run `xattr -cr "/Applications/Voxis.app"` |
 | FFmpeg not found | Install with `brew install ffmpeg` |
 | Pipeline stalls at SEPARATE | Ensure 8GB+ RAM is available; BS-RoFormer is memory-intensive |
 | Silent output | Check that input file is longer than 10 seconds (BS-RoFormer limitation) |
