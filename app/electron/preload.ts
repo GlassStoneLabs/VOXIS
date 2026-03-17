@@ -37,11 +37,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     offDone: (): void => {
       ipcRenderer.removeAllListeners('trinity-done');
     },
+
+    cancelEngine: (): Promise<void> =>
+      ipcRenderer.invoke('trinity:cancelEngine'),
   },
 
   shell: {
     openPath: (filePath: string): Promise<void> =>
       ipcRenderer.invoke('shell:openPath', filePath),
+    openFile: (filePath: string): Promise<string> =>
+      ipcRenderer.invoke('shell:openFile', filePath),
   },
 
   file: {

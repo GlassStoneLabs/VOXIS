@@ -36,7 +36,7 @@ class PedalboardMastering:
         Sean Olive et al., Harman International (2013-2018)
         - Bass shelf: +4 dB @ 105 Hz (Q=0.7)
         - Presence:   +1.5 dB @ 3 kHz (Q=1.0)
-        - Treble:     -2.5 dB shelf @ 10 kHz (Q=0.7)
+        - Treble:     -1.5 dB shelf @ 10 kHz (Q=0.7)
     """
 
     def __init__(self):
@@ -155,8 +155,8 @@ class PedalboardMastering:
           - Bass shelf:  +4 dB @ 105 Hz, Q=0.7
           - Mud cleanup: -1.5 dB @ 250 Hz, Q=0.8
           - Presence:    +1.5 dB @ 3 kHz, Q=1.0
-          - De-harsh:    -1 dB @ 6.5 kHz, Q=1.5
-          - Treble shelf: -2.5 dB @ 10 kHz, Q=0.7
+          - De-harsh:    -0.5 dB @ 6.5 kHz, Q=1.5
+          - Treble shelf: -1.5 dB @ 10 kHz, Q=0.7
           - Air rolloff:  LPF @ 18 kHz
         """
         effects = []
@@ -188,17 +188,17 @@ class PedalboardMastering:
             q=1.0,
         ))
 
-        # ── Harshness taming: -1 dB @ 6.5 kHz ──────────────────
+        # ── Harshness taming: -0.5 dB @ 6.5 kHz ─────────────────
         effects.append(PeakFilter(
             cutoff_frequency_hz=6500.0,
-            gain_db=-1.0,
+            gain_db=-0.5,
             q=1.5,
         ))
 
-        # ── Harman treble rolloff: -2.5 dB shelf @ 10 kHz ──────
+        # ── Harman treble rolloff: -1.5 dB shelf @ 10 kHz ─────
         effects.append(HighShelfFilter(
             cutoff_frequency_hz=10000.0,
-            gain_db=-2.5,
+            gain_db=-1.5,
             q=0.7,
         ))
 
@@ -209,7 +209,7 @@ class PedalboardMastering:
         print(f"[{self.__class__.__name__}] Harman EQ: "
               f"HPF={hpf:.0f}Hz | Bass=+4dB@105Hz | "
               f"Presence={presence:+.1f}dB@3kHz | "
-              f"Treble=-2.5dB@10kHz | LPF={lpf:.0f}Hz")
+              f"Treble=-1.5dB@10kHz | LPF={lpf:.0f}Hz")
 
         return effects
 

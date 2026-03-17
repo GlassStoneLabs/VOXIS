@@ -18,9 +18,11 @@ interface Window {
       offLog: () => void;
       onDone: (callback: (outputPath: string) => void) => void;
       offDone: () => void;
+      cancelEngine: () => Promise<void>;
     };
     shell: {
       openPath: (filePath: string) => Promise<void>;
+      openFile: (filePath: string) => Promise<string>;
     };
     file: {
       copy: (src: string, dest: string) => Promise<void>;

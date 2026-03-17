@@ -677,6 +677,18 @@ body {
   transform: translate(2px, 2px);
 }
 
+.btn-cancel {
+  border-color: var(--red) !important;
+  color: var(--red) !important;
+}
+
+.btn-cancel:hover {
+  background: var(--red) !important;
+  border-color: var(--red) !important;
+  color: var(--white) !important;
+  box-shadow: 4px 4px 0 rgba(0,0,0,0.4);
+}
+
 /* ── PROGRESS BAR ── */
 .progress-bar-outer {
   height: 4px;

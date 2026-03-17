@@ -141,13 +141,13 @@ class NoiseProfiler:
             vocal_db = min(4.0, (0.15 - vocal_ratio) * 30.0)
         elif vocal_ratio > 0.40:
             # Harsh/sibilant — cut presence
-            vocal_db = max(-3.0, -(vocal_ratio - 0.40) * 15.0)
+            vocal_db = max(-1.5, -(vocal_ratio - 0.40) * 15.0)
         else:
             vocal_db = 0.0
 
         # If centroid is very high (bright/harsh), apply gentle LPF taming
         if centroid > 4000:
-            auto_lpf = min(auto_lpf, 16000.0)
+            auto_lpf = min(auto_lpf, 18000.0)
 
         eq = {
             "lowpass_hz": round(auto_lpf, 0),

@@ -64,8 +64,10 @@ class VoiceRestoreWrapper:
         self._initialized = False
 
         # Configure intensity parameters based on mode
-        self.steps = 32 if mode == "EXTREME" else 16
-        self.cfg_strength = 1.0 if mode == "EXTREME" else 0.5
+        self.steps = 24 if mode == "EXTREME" else 16
+        self.cfg_strength = 0.7 if mode == "EXTREME" else 0.5
+        self.seed = -1
+        self.temperature = 1.0
 
     def _initialize_model(self):
         if self._initialized:
@@ -126,7 +128,10 @@ class VoiceRestoreWrapper:
     def _infer_chunk(self, chunk_tensor):
         """Run VoiceRestore inference on a single chunk (already on device)."""
         with torch.inference_mode():
-            restored = self.model(chunk_tensor, steps=self.steps, cfg_strength=self.cfg_strength)
+            restored = self.model(
+                chunk_tensor, steps=self.steps, cfg_strength=self.cfg_strength,
+                seed=self.seed, temperature=self.temperature,
+            )
             restored = restored.squeeze(0).float().cpu()
             return torch.clamp(restored, -1.0, 1.0)
 

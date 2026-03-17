@@ -61,6 +61,7 @@ class TrinityV8Desktop:
         self._denoiser  = None
         self._upscaler  = None
         self._limiter   = None
+        self._mode      = "HIGH"
 
         init_time = time.perf_counter() - t0
         print(f">> [SYSTEM] Engine ready in {init_time:.2f}s (models load on demand)")
@@ -85,14 +86,14 @@ class TrinityV8Desktop:
     def denoiser(self):
         if self._denoiser is None:
             from modules.voicerestore_wrapper import VoiceRestoreWrapper
-            self._denoiser = VoiceRestoreWrapper()
+            self._denoiser = VoiceRestoreWrapper(mode=self._mode)
         return self._denoiser
 
     @property
     def upscaler(self):
         if self._upscaler is None:
             from modules.upsampler import TrinityUpscaler
-            self._upscaler = TrinityUpscaler()
+            self._upscaler = TrinityUpscaler(quality=self._mode)
         return self._upscaler
 
     @property
@@ -143,6 +144,13 @@ class TrinityV8Desktop:
               f"Width: {float(params.get('stereo_width', 0.50)) * 100:.0f}% | "
               f"Format: {params.get('output_format', 'WAV')}")
         print(f"{'='*60}\n")
+
+        # Apply mode — invalidate lazy instances if mode changed
+        mode = params.get('denoise_mode', 'HIGH')
+        if mode != self._mode:
+            self._mode = mode
+            self._denoiser = None
+            self._upscaler = None
 
         # Generate cache key from file content + params
         job_key = self.cache.make_job_key(input_path, params)

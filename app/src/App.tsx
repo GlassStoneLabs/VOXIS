@@ -98,9 +98,9 @@ export default function App() {
   const [audioDuration, setAudioDuration] = useState(0);
   const [saveStatus,    setSaveStatus]    = useState<string | null>(null);
 
-  const logEndRef  = useRef<HTMLDivElement>(null);
-  const audioRef   = useRef<HTMLAudioElement>(null);
-  const mountedRef = useRef(true);
+  const logBoxRef   = useRef<HTMLDivElement>(null);
+  const audioRef    = useRef<HTMLAudioElement>(null);
+  const mountedRef  = useRef(true);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -108,7 +108,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const box = logBoxRef.current;
+    if (box) box.scrollTop = box.scrollHeight;
   }, [logs]);
 
   // Subscribe to update notifications from main process
@@ -128,7 +129,7 @@ export default function App() {
     if (!mountedRef.current) return;
     setLogs(prev => {
       const next = [...prev, line];
-      return next.length > 150 ? next.slice(-150) : next;
+      return next.length > 300 ? next.slice(-300) : next;
     });
 
     const step = detectStep(line);
@@ -214,6 +215,18 @@ export default function App() {
     } finally {
       window.electronAPI.trinity.offLog();
       window.electronAPI.trinity.offDone();
+    }
+  };
+
+  // ── Cancel Processing ──────────────────────────────────────────────────────
+  const handleCancel = async () => {
+    if (!isRunning) return;
+    try {
+      await window.electronAPI.trinity.cancelEngine();
+      setStatus('idle');
+      setCurrentStep(0);
+    } catch (e) {
+      appendLog(`[ERROR] Cancel failed: ${errMsg(e)}`);
     }
   };
 
@@ -600,6 +613,22 @@ export default function App() {
               </motion.button>
 
               <AnimatePresence>
+                {isRunning && (
+                  <motion.button
+                    className="btn-reveal btn-cancel"
+                    onClick={handleCancel}
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    whileHover={{ scale: 1.02, y: -2, x: -2 }}
+                    whileTap={{ scale: 0.98, y: 2, x: 2 }}
+                  >
+                    CANCEL
+                  </motion.button>
+                )}
+              </AnimatePresence>
+
+              <AnimatePresence>
                 {outputFile && (
                   <>
                     <motion.button
@@ -689,7 +718,9 @@ export default function App() {
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0 }}
                 >
-                  ▶ STEP {currentStep}/{STEPS.length} — {STEPS[Math.max(0, currentStep - 1)]?.label ?? 'INIT'}
+                  {currentStep === 0
+                    ? '▶ STARTING...'
+                    : `▶ STEP ${currentStep}/${STEPS.length} — ${STEPS[currentStep - 1]?.label ?? 'PROCESSING'}`}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -710,9 +741,10 @@ export default function App() {
                   src={previewUrl}
                   onPlay={() => setIsPlaying(true)}
                   onPause={() => setIsPlaying(false)}
-                  onEnded={() => setIsPlaying(false)}
+                  onEnded={() => { setIsPlaying(false); setAudioTime(0); }}
                   onTimeUpdate={() => setAudioTime(audioRef.current?.currentTime ?? 0)}
                   onLoadedMetadata={() => setAudioDuration(audioRef.current?.duration ?? 0)}
+                  onError={() => appendLog('[ERROR] Audio preview failed to load.')}
                 />
 
                 <div className="preview-filename">◆ {basename(outputFile)}</div>
@@ -749,10 +781,10 @@ export default function App() {
             )}
           </AnimatePresence>
 
-          <div className="log-viewer">
+          <div className="log-viewer" ref={logBoxRef}>
             {logs.map((line, i) => (
-              <motion.div
-                key={`${i}-${line.slice(0, 20)}`}
+              <div
+                key={i}
                 className={`log-line ${
                   line.startsWith('[ERROR]') || line.startsWith('>> [ERROR]')
                     ? 'log-error'
@@ -760,14 +792,10 @@ export default function App() {
                     ? 'log-step'
                     : ''
                 }`}
-                initial={{ opacity: 0, x: -6 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.15 }}
               >
                 {line}
-              </motion.div>
+              </div>
             ))}
-            <div ref={logEndRef} />
           </div>
         </motion.section>
 

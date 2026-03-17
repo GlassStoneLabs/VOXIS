@@ -258,6 +258,15 @@ ipcMain.handle('shell:openPath', (_event, filePath: string) => {
 });
 
 // ---------------------------------------------------------------------------
+// IPC: Open file in default application
+// ---------------------------------------------------------------------------
+ipcMain.handle('shell:openFile', (_event, filePath: string) => {
+  if (typeof filePath === 'string' && filePath.length > 0) {
+    return shell.openPath(filePath);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // IPC: Save-As dialog
 // ---------------------------------------------------------------------------
 ipcMain.handle('dialog:saveFile', async (_event, defaultName: string, ext: string) => {
@@ -274,11 +283,22 @@ ipcMain.handle('dialog:saveFile', async (_event, defaultName: string, ext: strin
 });
 
 // ---------------------------------------------------------------------------
-// IPC: Copy file
+// IPC: Copy file (async — avoids blocking main thread for large files)
 // ---------------------------------------------------------------------------
-ipcMain.handle('file:copy', (_event, src: string, dest: string) => {
-  if (typeof src !== 'string' || typeof dest !== 'string') return;
-  fs.copyFileSync(src, dest);
+ipcMain.handle('file:copy', async (_event, src: string, dest: string) => {
+  if (typeof src !== 'string' || typeof dest !== 'string') throw new Error('Invalid paths');
+  await fs.promises.copyFile(src, dest);
+});
+
+// ---------------------------------------------------------------------------
+// IPC: Cancel active Trinity engine process
+// ---------------------------------------------------------------------------
+ipcMain.handle('trinity:cancelEngine', () => {
+  if (activeProcess) {
+    activeProcess.kill('SIGTERM');
+    activeProcess = null;
+    send('trinity-log', '>> [VOXIS] Processing cancelled by user.');
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -330,10 +350,16 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (activeProcess) {
-    activeProcess.kill('SIGTERM');
+    const proc = activeProcess;
     activeProcess = null;
+    // Wait for child to exit before quitting so output files aren't corrupted
+    proc.once('exit', () => app.quit());
+    proc.kill('SIGTERM');
+    // Fallback: force quit after 5s if process doesn't respond
+    setTimeout(() => app.quit(), 5000).unref();
+  } else {
+    app.quit();
   }
-  app.quit();
 });
 
 app.on('activate', () => {
