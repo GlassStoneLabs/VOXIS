@@ -88,7 +88,15 @@ export default function App() {
   const [autoHPF,   setAutoHPF]   = useState<number | null>(null);
   const [autoVocal, setAutoVocal] = useState<number | null>(null);
 
+  // Preview player
+  const [previewUrl,    setPreviewUrl]    = useState<string | null>(null);
+  const [isPlaying,     setIsPlaying]     = useState(false);
+  const [audioTime,     setAudioTime]     = useState(0);
+  const [audioDuration, setAudioDuration] = useState(0);
+  const [saveStatus,    setSaveStatus]    = useState<string | null>(null);
+
   const logEndRef  = useRef<HTMLDivElement>(null);
+  const audioRef   = useRef<HTMLAudioElement>(null);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -129,6 +137,19 @@ export default function App() {
     }
   }, []);
 
+  // ── Reset preview/save state ───────────────────────────────────────────────
+  const resetOutputState = () => {
+    setOutputFile(null);
+    setPreviewUrl(null);
+    setIsPlaying(false);
+    setAudioTime(0);
+    setAudioDuration(0);
+    setSaveStatus(null);
+    setAutoLPF(null);
+    setAutoHPF(null);
+    setAutoVocal(null);
+  };
+
   // ── File Selection ─────────────────────────────────────────────────────────
   const handleSelectFile = async () => {
     if (status === 'running') return;
@@ -136,12 +157,9 @@ export default function App() {
       const selected = await window.electronAPI.dialog.openFile();
       if (!selected) return;
       setInputFile(selected);
-      setOutputFile(null);
+      resetOutputState();
       setCurrentStep(0);
       setStatus('idle');
-      setAutoLPF(null);
-      setAutoHPF(null);
-      setAutoVocal(null);
       setLogs([`LOADED — ${basename(selected)}`, 'READY TO PROCESS.']);
     } catch (e) {
       appendLog(`[ERROR] File dialog: ${errMsg(e)}`);
@@ -154,10 +172,7 @@ export default function App() {
 
     setStatus('running');
     setCurrentStep(0);
-    setOutputFile(null);
-    setAutoLPF(null);
-    setAutoHPF(null);
-    setAutoVocal(null);
+    resetOutputState();
     setLogs(['>> [VOXIS] Initiating Trinity V8.1 Pipeline...']);
 
     // Detach any stale listeners before attaching fresh ones
@@ -179,6 +194,7 @@ export default function App() {
         setStatus('done');
         setCurrentStep(STEPS.length);
         setOutputFile(result);
+        setPreviewUrl(window.electronAPI.file.toPreviewUrl(result));
         appendLog('>> [VOXIS] RESTORATION COMPLETE');
         appendLog(`>> OUTPUT: ${basename(result)}`);
       }
@@ -202,6 +218,38 @@ export default function App() {
       appendLog(`[INFO] Output: ${outputFile}`);
     }
   };
+
+  // ── Save As ────────────────────────────────────────────────────────────────
+  const handleSaveAs = async () => {
+    if (!outputFile) return;
+    const ext  = outputFile.endsWith('.flac') ? 'flac' : 'wav';
+    const dest = await window.electronAPI.dialog.saveFile(basename(outputFile), ext);
+    if (!dest) return;
+    try {
+      await window.electronAPI.file.copy(outputFile, dest);
+      setSaveStatus(`Saved → ${basename(dest)}`);
+      appendLog(`>> [VOXIS] Saved to: ${dest}`);
+    } catch (e) {
+      appendLog(`>> [ERROR] Save failed: ${errMsg(e)}`);
+    }
+  };
+
+  // ── Audio player controls ──────────────────────────────────────────────────
+  const togglePlay = () => {
+    const a = audioRef.current;
+    if (!a) return;
+    if (a.paused) { a.play(); } else { a.pause(); }
+  };
+
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const a = audioRef.current;
+    if (!a) return;
+    a.currentTime = Number(e.target.value);
+    setAudioTime(a.currentTime);
+  };
+
+  const fmtTime = (s: number) =>
+    `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
   const isRunning  = status === 'running';
   const canProcess = !!inputFile && !isRunning;
@@ -508,18 +556,32 @@ export default function App() {
                   : 'INITIATE RESTORATION'}
               </motion.button>
 
-              {outputFile && (
-                <motion.button
-                  className="btn-reveal"
-                  onClick={handleRevealOutput}
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  whileHover={{ scale: 1.02, y: -2, x: -2 }}
-                  whileTap={{ scale: 0.98, y: 2, x: 2 }}
-                >
-                  REVEAL OUTPUT
-                </motion.button>
-              )}
+              <AnimatePresence>
+                {outputFile && (
+                  <>
+                    <motion.button
+                      className="btn-reveal"
+                      onClick={handleSaveAs}
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      whileHover={{ scale: 1.02, y: -2, x: -2 }}
+                      whileTap={{ scale: 0.98, y: 2, x: 2 }}
+                    >
+                      SAVE AS
+                    </motion.button>
+                    <motion.button
+                      className="btn-reveal"
+                      onClick={handleRevealOutput}
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      whileHover={{ scale: 1.02, y: -2, x: -2 }}
+                      whileTap={{ scale: 0.98, y: 2, x: 2 }}
+                    >
+                      REVEAL
+                    </motion.button>
+                  </>
+                )}
+              </AnimatePresence>
             </div>
           </div>
 
@@ -589,6 +651,61 @@ export default function App() {
               )}
             </AnimatePresence>
           </div>
+
+          {/* ── Audio Preview ── */}
+          <AnimatePresence>
+            {previewUrl && outputFile && (
+              <motion.div
+                className="preview-panel"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ type: 'spring', stiffness: 260, damping: 28 }}
+              >
+                {/* Hidden native audio element */}
+                <audio
+                  ref={audioRef}
+                  src={previewUrl}
+                  onPlay={() => setIsPlaying(true)}
+                  onPause={() => setIsPlaying(false)}
+                  onEnded={() => setIsPlaying(false)}
+                  onTimeUpdate={() => setAudioTime(audioRef.current?.currentTime ?? 0)}
+                  onLoadedMetadata={() => setAudioDuration(audioRef.current?.duration ?? 0)}
+                />
+
+                <div className="preview-filename">◆ {basename(outputFile)}</div>
+
+                <div className="preview-controls">
+                  <motion.button
+                    className="btn-play"
+                    onClick={togglePlay}
+                    whileHover={{ scale: 1.08 }}
+                    whileTap={{ scale: 0.92 }}
+                  >
+                    {isPlaying ? '▌▌' : '▶'}
+                  </motion.button>
+
+                  <span className="preview-time">{fmtTime(audioTime)}</span>
+
+                  <input
+                    type="range"
+                    className="preview-seek"
+                    min={0}
+                    max={audioDuration || 1}
+                    step={0.1}
+                    value={audioTime}
+                    onChange={handleSeek}
+                  />
+
+                  <span className="preview-time muted">{fmtTime(audioDuration)}</span>
+                </div>
+
+                {saveStatus && (
+                  <div className="preview-save-status">{saveStatus}</div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <div className="log-viewer">
             {logs.map((line, i) => (

@@ -2,13 +2,18 @@
 // Copyright (c) 2026 Glass Stone LLC. All Rights Reserved.
 // Powered by Trinity V8.1 | Built by Glass Stone
 
-import { app, BrowserWindow, dialog, ipcMain, shell, nativeImage } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell, nativeImage, protocol, net } from 'electron';
 import { spawn, ChildProcess } from 'child_process';
 import { createInterface } from 'readline';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as http from 'http';
 import * as os from 'os';
+
+// Register custom scheme for local audio preview (must be before app.whenReady)
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'voxis-file', privileges: { stream: true, bypassCSP: true, supportFetchAPI: true, corsEnabled: true } },
+]);
 
 let mainWindow: BrowserWindow | null = null;
 let activeProcess: ChildProcess | null = null;
@@ -148,9 +153,16 @@ ipcMain.handle(
     // --- Derive output path (~/Music/Voxis Restored/) ---
     const restoredDir = path.join(os.homedir(), 'Music', 'Voxis Restored');
     fs.mkdirSync(restoredDir, { recursive: true });
-    const stem    = path.basename(filePath, path.extname(filePath));
-    const outExt  = safeFormat === 'FLAC' ? 'flac' : 'wav';
-    const outPath = path.join(restoredDir, `${stem}_voxis_mastered.${outExt}`);
+    const stem   = path.basename(filePath, path.extname(filePath));
+    const outExt = safeFormat === 'FLAC' ? 'flac' : 'wav';
+    const base   = path.join(restoredDir, `${stem}_voxis_mastered.${outExt}`);
+    // Avoid silently overwriting previous output
+    let outPath = base;
+    let collision = 1;
+    while (fs.existsSync(outPath)) {
+      outPath = path.join(restoredDir, `${stem}_voxis_mastered_${collision}.${outExt}`);
+      collision++;
+    }
 
     // --- Build args ---
     const args: string[] = [
@@ -241,9 +253,40 @@ ipcMain.handle('shell:openPath', (_event, filePath: string) => {
 });
 
 // ---------------------------------------------------------------------------
+// IPC: Save-As dialog
+// ---------------------------------------------------------------------------
+ipcMain.handle('dialog:saveFile', async (_event, defaultName: string, ext: string) => {
+  if (!mainWindow) return null;
+  const safeExt  = ['wav', 'flac'].includes(ext) ? ext : 'wav';
+  const result = await dialog.showSaveDialog(mainWindow, {
+    defaultPath: path.join(os.homedir(), 'Music', defaultName),
+    filters: [
+      { name: safeExt === 'flac' ? 'FLAC Audio' : 'WAV Audio', extensions: [safeExt] },
+      { name: 'All Files', extensions: ['*'] },
+    ],
+  });
+  return result.canceled ? null : result.filePath ?? null;
+});
+
+// ---------------------------------------------------------------------------
+// IPC: Copy file (used by Save-As)
+// ---------------------------------------------------------------------------
+ipcMain.handle('file:copy', (_event, src: string, dest: string) => {
+  if (typeof src !== 'string' || typeof dest !== 'string') return;
+  fs.copyFileSync(src, dest);
+});
+
+// ---------------------------------------------------------------------------
 // App lifecycle
 // ---------------------------------------------------------------------------
 app.whenReady().then(() => {
+  // Serve local audio files for in-app preview via voxis-file://
+  protocol.handle('voxis-file', (req) => {
+    // req.url = 'voxis-file:///Users/...' → strip scheme → '/Users/...'
+    const filePath = decodeURIComponent(req.url.replace('voxis-file://', ''));
+    return net.fetch('file://' + filePath);
+  });
+
   // Set dock icon on macOS (required in dev mode — production uses .icns from bundle)
   if (process.platform === 'darwin') {
     const iconPath = isDev

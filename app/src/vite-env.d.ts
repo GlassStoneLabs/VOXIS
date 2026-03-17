@@ -4,6 +4,7 @@ interface Window {
   electronAPI: {
     dialog: {
       openFile: () => Promise<string | null>;
+      saveFile: (defaultName: string, ext: string) => Promise<string | null>;
     };
     trinity: {
       runEngine: (params: {
@@ -20,6 +21,10 @@ interface Window {
     };
     shell: {
       openPath: (filePath: string) => Promise<void>;
+    };
+    file: {
+      copy: (src: string, dest: string) => Promise<void>;
+      toPreviewUrl: (absPath: string) => string;
     };
   };
 }
