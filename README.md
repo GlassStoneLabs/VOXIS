@@ -165,10 +165,11 @@ Voxis V4.0.0 DENSE
 ## Copyright
 
 Copyright © 2026 Glass Stone LLC. All Rights Reserved.
-CEO: Gabriel B. Rodriguez | York, PA
+CEO: Gabriel B. Rodriguez | 
+
 
 See `LICENSE.md` for full terms.
 
 ---
 
-*VOXIS 4.0 DENSE — No demos. Fully functional professional software.*
+*VOXIS .*
