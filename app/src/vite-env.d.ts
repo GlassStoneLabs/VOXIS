@@ -26,5 +26,10 @@ interface Window {
       copy: (src: string, dest: string) => Promise<void>;
       toPreviewUrl: (absPath: string) => string;
     };
+    update: {
+      onStatus: (cb: (s: { type: string; version?: string; percent?: number }) => void) => void;
+      download: () => Promise<void>;
+      install: () => void;
+    };
   };
 }
