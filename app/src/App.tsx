@@ -314,7 +314,7 @@ export default function App() {
         <div className="header-meta">
           <div className="meta-row"><span className="meta-label">BUILT BY</span><span className="meta-value">GLASS STONE LLC</span></div>
           <div className="meta-row"><span className="meta-label">CEO</span><span className="meta-value">GABRIEL B. RODRIGUEZ</span></div>
-          <div className="meta-row"><span className="meta-label">BUILD</span><span className="meta-value">MACOS M-SERIES · 2026</span></div>
+          <div className="meta-row"><span className="meta-label">STUDIO</span><span className="meta-value">GLASS STONE · 2026</span></div>
         </div>
         <div className="header-engine">
           <span className="engine-badge">TRINITY V8.1</span>

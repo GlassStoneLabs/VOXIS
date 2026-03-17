@@ -1,0 +1,153 @@
+name: Release Voxis
+
+# Triggered by pushing a version tag: git tag v4.0.1 && git push --tags
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write  # needed to create GitHub Releases
+
+jobs:
+  # ── macOS arm64 ──────────────────────────────────────────────────────────────
+  build-macos:
+    name: Build macOS (arm64 DMG)
+    runs-on: macos-14  # Apple Silicon runner
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      # Download pre-built macOS binary from the companion binaries pre-release.
+      # Before tagging vX.Y.Z, create a "vX.Y.Z-binaries" pre-release and upload
+      # the macOS binary there (see build_scripts/stage_binaries.sh).
+      - name: Download macOS binary
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}-binaries"
+          mkdir -p app/resources/bin
+          gh release download "$TAG" \
+            --repo "${{ github.repository }}" \
+            --pattern "trinity_v8_core" \
+            --dir app/resources/bin
+          chmod +x app/resources/bin/trinity_v8_core
+
+      - name: Install frontend dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Build DMG
+        working-directory: app
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run electron:build:mac
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-release
+          path: |
+            app/release/*.dmg
+            app/release/latest-mac.yml
+          if-no-files-found: error
+
+  # ── Windows x64 ──────────────────────────────────────────────────────────────
+  build-windows:
+    name: Build Windows (x64 NSIS)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      # Download pre-built Windows binary + FFmpeg from binaries pre-release.
+      - name: Download Windows binary and FFmpeg
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $TAG = "${{ github.ref_name }}-binaries"
+          New-Item -ItemType Directory -Force -Path app/resources/bin | Out-Null
+          gh release download "$TAG" `
+            --repo "${{ github.repository }}" `
+            --pattern "trinity_v8_core.exe" `
+            --pattern "ffmpeg.exe" `
+            --pattern "ffprobe.exe" `
+            --dir app/resources/bin
+
+      - name: Install frontend dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Build NSIS installer
+        working-directory: app
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run electron:build:win
+
+      - name: Upload NSIS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: |
+            app/release/*.exe
+            app/release/latest.yml
+          if-no-files-found: error
+
+  # ── Publish GitHub Release ────────────────────────────────────────────────────
+  release:
+    name: Publish GitHub Release
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-release
+          path: dist/macos
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-release
+          path: dist/windows
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --title "Voxis ${{ github.ref_name }}" \
+            --notes "## Voxis ${{ github.ref_name }}
+
+          ### Downloads
+          - **macOS (Apple Silicon)**: \`.dmg\` installer
+          - **Windows (x64)**: \`.exe\` NSIS installer
+
+          ### Auto-update
+          Existing installs will receive an update prompt automatically on next launch." \
+            dist/macos/*.dmg \
+            dist/macos/latest-mac.yml \
+            dist/windows/*.exe \
+            dist/windows/latest.yml

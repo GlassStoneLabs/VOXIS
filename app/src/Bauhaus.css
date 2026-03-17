@@ -1129,3 +1129,39 @@ body {
   color: rgba(255, 255, 255, 0.5);
   text-transform: uppercase;
 }
+/* ── UPDATE BANNER ── */
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 0.5rem 1.5rem;
+  background: var(--blue);
+  border-bottom: var(--border-w) solid var(--black);
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--white);
+  text-transform: uppercase;
+}
+
+.btn-update {
+  font-family: var(--mono);
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  background: var(--white);
+  color: var(--blue);
+  border: 2px solid var(--white);
+  padding: 0.2rem 0.75rem;
+  cursor: pointer;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.3);
+}
+
+.btn-update-install {
+  background: var(--yellow);
+  color: var(--black);
+  border-color: var(--yellow);
+}

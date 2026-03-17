@@ -63,6 +63,8 @@ VOXIS-*.tar.gz
 *.command
 *.bat
 *.ps1
+# Allow build scripts (PowerShell)
+!build_scripts/*.ps1
 
 # Models & Temp
 trinity_engine/dependencies/models/
