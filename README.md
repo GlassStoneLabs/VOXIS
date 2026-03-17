@@ -2,7 +2,7 @@
 
 **Powered by Trinity V8.1 | Built by Glass Stone LLC**
 **CEO: Gabriel B. Rodriguez | York, PA | © 2026**
-
+coded with help from Claude 4.6 opus , Google Gemini was used to prototype the Ui , it was mostly built by hand . 
 ---
 
 ## Overview
