@@ -64,6 +64,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onStatus: (cb: (s: { type: string; version?: string; percent?: number }) => void): void => {
       ipcRenderer.on('update-status', (_event, data) => cb(data));
     },
+    offStatus: (): void => {
+      ipcRenderer.removeAllListeners('update-status');
+    },
     download: (): Promise<void> => ipcRenderer.invoke('update:download'),
     install:  (): void => { ipcRenderer.invoke('update:install'); },
   },

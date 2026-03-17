@@ -40,8 +40,7 @@ class PedalboardMastering:
     """
 
     def __init__(self):
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        self.temp_dir = os.path.join(base_dir, "trinity_temp")
+        self.temp_dir = os.path.join(get_engine_base_dir(), "trinity_temp")
         os.makedirs(self.temp_dir, exist_ok=True)
 
         print(f"[{self.__class__.__name__}] Pedalboard: {'available' if PEDALBOARD_AVAILABLE else 'NOT FOUND'}")

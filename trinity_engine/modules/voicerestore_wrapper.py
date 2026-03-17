@@ -191,7 +191,7 @@ class VoiceRestoreWrapper:
                       f"{num_chunks} chunks ({self.CHUNK_SECONDS}s + {self.OVERLAP_SECONDS}s overlap)")
 
                 # Compute output overlap in model's target sample rate (24kHz)
-                target_sr = self.model.target_sample_rate
+                target_sr = getattr(self.model, 'target_sample_rate', 24000)
                 out_overlap = int(self.OVERLAP_SECONDS * target_sr)
 
                 restored_chunks = []
@@ -219,8 +219,9 @@ class VoiceRestoreWrapper:
             if restored_wav.dim() == 1:
                 restored_wav = restored_wav.unsqueeze(0)
 
-            torchaudio.save(out_path, restored_wav, self.model.target_sample_rate)
-            print(f"[{self.__class__.__name__}] ✓ Restoration saved @ {self.model.target_sample_rate}Hz: {os.path.basename(out_path)}")
+            out_sr = getattr(self.model, 'target_sample_rate', 24000)
+            torchaudio.save(out_path, restored_wav, out_sr)
+            print(f"[{self.__class__.__name__}] ✓ Restoration saved @ {out_sr}Hz: {os.path.basename(out_path)}")
 
         except Exception as e:
             print(f"[{self.__class__.__name__}] Inference Failed: {e}")

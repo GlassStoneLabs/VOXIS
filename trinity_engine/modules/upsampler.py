@@ -146,10 +146,12 @@ class TrinityUpscaler:
                 if hasattr(waveform, 'cpu'):
                     waveform = waveform.cpu()
 
-                # AudioSR may return (batch, channels, samples) or (batch, 1, channels, samples)
-                # Squeeze all batch dimensions until we have (channels, samples) or (samples,)
-                while waveform.dim() > 2:
-                    waveform = waveform.squeeze(0)
+                # AudioSR may return (batch, channels, samples) or (batch, 1, channels, samples).
+                # Squeeze all size-1 dims first, then force to 2D if still higher.
+                waveform = waveform.squeeze()   # collapse all unit dims
+                if waveform.dim() > 2:
+                    # e.g. (2, channels, samples) — flatten leading dims into channels
+                    waveform = waveform.reshape(-1, waveform.shape[-1])
 
                 # Ensure 2D: (channels, samples)
                 if waveform.dim() == 1:

@@ -689,6 +689,11 @@ body {
   box-shadow: 4px 4px 0 rgba(0,0,0,0.4);
 }
 
+.btn-cancel:active {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0 rgba(0,0,0,0.4);
+}
+
 /* ── PROGRESS BAR ── */
 .progress-bar-outer {
   height: 4px;

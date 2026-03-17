@@ -30,6 +30,7 @@ interface Window {
     };
     update: {
       onStatus: (cb: (s: { type: string; version?: string; percent?: number }) => void) => void;
+      offStatus: () => void;
       download: () => Promise<void>;
       install: () => void;
     };

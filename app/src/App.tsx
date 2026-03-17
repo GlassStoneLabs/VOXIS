@@ -98,9 +98,14 @@ export default function App() {
   const [audioDuration, setAudioDuration] = useState(0);
   const [saveStatus,    setSaveStatus]    = useState<string | null>(null);
 
-  const logBoxRef   = useRef<HTMLDivElement>(null);
-  const audioRef    = useRef<HTMLAudioElement>(null);
-  const mountedRef  = useRef(true);
+  const [elapsedSec, setElapsedSec] = useState(0);
+
+  const logBoxRef    = useRef<HTMLDivElement>(null);
+  const audioRef     = useRef<HTMLAudioElement>(null);
+  const mountedRef   = useRef(true);
+  const timerRef     = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastLogRef   = useRef<number>(0);
+  const startTimeRef = useRef<number>(0);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -115,6 +120,7 @@ export default function App() {
   // Subscribe to update notifications from main process
   useEffect(() => {
     window.electronAPI.update.onStatus(setUpdateStatus);
+    return () => { window.electronAPI.update.offStatus(); };
   }, []);
 
   // Cleanup IPC listeners on unmount
@@ -127,6 +133,7 @@ export default function App() {
 
   const appendLog = useCallback((line: string) => {
     if (!mountedRef.current) return;
+    lastLogRef.current = Date.now();
     setLogs(prev => {
       const next = [...prev, line];
       return next.length > 300 ? next.slice(-300) : next;
@@ -181,8 +188,30 @@ export default function App() {
 
     setStatus('running');
     setCurrentStep(0);
+    setElapsedSec(0);
     resetOutputState();
     setLogs(['>> [VOXIS] Initiating Trinity V8.1 Pipeline...']);
+
+    // Start elapsed-time + heartbeat timer
+    startTimeRef.current = Date.now();
+    lastLogRef.current   = Date.now();
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      if (!mountedRef.current) return;
+      const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
+      setElapsedSec(elapsed);
+      // Heartbeat: inject a log line if silent >90s (model is running, just quiet)
+      if (Date.now() - lastLogRef.current > 90_000) {
+        const m = Math.floor(elapsed / 60), s = elapsed % 60;
+        const ts = `${m}m ${String(s).padStart(2, '0')}s`;
+        lastLogRef.current = Date.now(); // reset so we don't flood
+        setLogs(prev => {
+          const msg = `[VOXIS] Neural inference running... ${ts} elapsed — please wait`;
+          const next = [...prev, msg];
+          return next.length > 300 ? next.slice(-300) : next;
+        });
+      }
+    }, 1000);
 
     // Detach any stale listeners before attaching fresh ones
     window.electronAPI.trinity.offLog();
@@ -213,6 +242,7 @@ export default function App() {
         appendLog(`>> [ERROR] ${errMsg(e)}`);
       }
     } finally {
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
       window.electronAPI.trinity.offLog();
       window.electronAPI.trinity.offDone();
     }
@@ -221,10 +251,12 @@ export default function App() {
   // ── Cancel Processing ──────────────────────────────────────────────────────
   const handleCancel = async () => {
     if (!isRunning) return;
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     try {
       await window.electronAPI.trinity.cancelEngine();
       setStatus('idle');
       setCurrentStep(0);
+      setElapsedSec(0);
     } catch (e) {
       appendLog(`[ERROR] Cancel failed: ${errMsg(e)}`);
     }
@@ -275,6 +307,9 @@ export default function App() {
   const isRunning  = status === 'running';
   const canProcess = !!inputFile && !isRunning;
   const progress   = Math.round((currentStep / STEPS.length) * 100);
+  const elapsedFmt = elapsedSec > 0
+    ? ` · ${Math.floor(elapsedSec / 60)}m ${String(elapsedSec % 60).padStart(2, '0')}s`
+    : '';
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -719,8 +754,8 @@ export default function App() {
                   exit={{ opacity: 0 }}
                 >
                   {currentStep === 0
-                    ? '▶ STARTING...'
-                    : `▶ STEP ${currentStep}/${STEPS.length} — ${STEPS[currentStep - 1]?.label ?? 'PROCESSING'}`}
+                    ? `▶ STARTING...${elapsedFmt}`
+                    : `▶ STEP ${currentStep}/${STEPS.length} — ${STEPS[currentStep - 1]?.label ?? 'PROCESSING'}${elapsedFmt}`}
                 </motion.div>
               )}
             </AnimatePresence>
