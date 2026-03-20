@@ -76,7 +76,7 @@ async function createWindow() {
     minWidth: 900,
     minHeight: 700,
     titleBarStyle: 'hiddenInset',
-    title: 'VOXIS — Glass Stone LLC',
+    title: 'VOXIS 4.0 DENSE — Voice Restoration | Glass Stone LLC',
     icon: path.join(__dirname, '..', 'resources', 'icons', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -108,7 +108,7 @@ ipcMain.handle('dialog:openFile', async () => {
     properties: ['openFile'],
     filters: [
       {
-        name: 'Audio & Video',
+        name: 'Voice & Audio Files',
         extensions: ['wav', 'mp3', 'flac', 'aac', 'ogg', 'm4a', 'aiff', 'mp4', 'mov', 'mkv', 'avi'],
       },
     ],

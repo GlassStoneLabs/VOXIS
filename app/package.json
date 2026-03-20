@@ -2,7 +2,7 @@
   "name": "voxis",
   "private": true,
   "version": "4.0.0",
-  "description": "VOXIS 4.0 DENSE — Professional Audio Restoration powered by Trinity V8.1",
+  "description": "VOXIS 4.0 DENSE — Professional Voice Restoration powered by Trinity V8.1",
   "author": {
     "name": "Glass Stone LLC",
     "email": "info@glassstone.dev"
@@ -37,14 +37,14 @@
   },
   "build": {
     "appId": "com.glassstone.voxis",
-    "productName": "Voxis",
+    "productName": "Voxis 4.0 DENSE",
     "publish": {
       "provider": "github",
       "owner": "GlassStoneLabs",
       "repo": "VOXIS"
     },
     "mac": {
-      "category": "public.app-category.music",
+      "category": "public.app-category.utilities",
       "target": [
         {
           "target": "dmg",
@@ -81,10 +81,10 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Voxis"
+      "shortcutName": "Voxis 4.0 DENSE"
     },
     "dmg": {
-      "title": "VOXIS",
+      "title": "VOXIS 4.0 DENSE — Voice Restoration",
       "icon": "resources/icons/icon.icns",
       "iconSize": 128,
       "window": {

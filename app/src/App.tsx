@@ -51,24 +51,23 @@ function fmtTime(s: number): string {
   return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 }
 
-// ── Logo ─────────────────────────────────────────────────────────────────────
+// ── Logo (matches official VOXIS DENSE Bauhaus mark) ────────────────────────
 const Logo = () => (
-  <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="logo-svg">
-    <rect x="0" y="0" width="100" height="100" fill="#FFFFFF" />
-    <line x1="20" y1="0" x2="20" y2="100" stroke="#141414" strokeWidth="3" />
-    <line x1="80" y1="0" x2="80" y2="100" stroke="#141414" strokeWidth="3" />
-    <line x1="0" y1="80" x2="100" y2="80" stroke="#141414" strokeWidth="3" />
-    <line x1="0" y1="20" x2="100" y2="20" stroke="#141414" strokeWidth="3" />
-    <line x1="50" y1="0" x2="50" y2="100" stroke="#141414" strokeWidth="2" />
-    <circle cx="20" cy="80" r="10" fill="#E03E3E" stroke="#141414" strokeWidth="3" />
-    <polygon points="20,80 35,65 35,95" fill="#2C6BB6" stroke="#141414" strokeWidth="3" />
-    <polygon points="35,65 65,35 75,45 45,75" fill="#F0C420" stroke="#141414" strokeWidth="3" />
-    <polygon points="45,75 75,45 85,55 55,85" fill="#F0C420" stroke="#141414" strokeWidth="3" />
-    <rect x="65" y="10" width="20" height="25" fill="#2C6BB6" stroke="#141414" strokeWidth="3" />
-    <polygon points="65,10 65,35 85,35" fill="#E03E3E" stroke="#141414" strokeWidth="3" />
-    <line x1="35" y1="65" x2="45" y2="75" stroke="#141414" strokeWidth="3" />
-    <line x1="50" y1="50" x2="60" y2="60" stroke="#141414" strokeWidth="3" />
-    <line x1="65" y1="35" x2="75" y2="45" stroke="#141414" strokeWidth="3" />
+  <svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg" className="logo-svg">
+    {/* Black cross structure */}
+    <line x1="30" y1="0" x2="30" y2="120" stroke="#1A1A1A" strokeWidth="5" />
+    <line x1="0" y1="48" x2="120" y2="48" stroke="#1A1A1A" strokeWidth="5" />
+    <line x1="0" y1="78" x2="120" y2="78" stroke="#1A1A1A" strokeWidth="5" />
+    {/* Red rectangle (upper-left) */}
+    <rect x="8" y="10" width="52" height="50" fill="#C9382D" stroke="#1A1A1A" strokeWidth="2" />
+    {/* Small blue circle (upper-right) */}
+    <circle cx="68" cy="38" r="10" fill="#2B5EA0" stroke="#1A1A1A" strokeWidth="2" />
+    {/* Small yellow triangle (upper-right) */}
+    <polygon points="85,28 98,48 72,48" fill="#F5B731" stroke="#1A1A1A" strokeWidth="2" />
+    {/* Large blue circle (lower-left) */}
+    <circle cx="28" cy="82" r="20" fill="#2B5EA0" stroke="#1A1A1A" strokeWidth="2" />
+    {/* Large yellow triangle (lower-center) */}
+    <polygon points="60,52 90,110 30,110" fill="#F5B731" stroke="#1A1A1A" strokeWidth="2" />
   </svg>
 );
 
@@ -132,6 +131,9 @@ export default function App() {
   // Map UI mode → engine mode
   const engineMode = processingMode === 'EXTREME' ? 'EXTREME' : 'HIGH';
 
+  // Safe accessor — undefined in browser preview, defined in Electron
+  const api = typeof window !== 'undefined' ? window.electronAPI : undefined;
+
   // ── Lifecycle ────────────────────────────────────────────────────────────
   useEffect(() => {
     mountedRef.current = true;
@@ -144,16 +146,16 @@ export default function App() {
   }, [logs]);
 
   useEffect(() => {
-    window.electronAPI.update.onStatus(setUpdateStatus);
-    return () => { window.electronAPI.update.offStatus(); };
-  }, []);
+    api?.update.onStatus(setUpdateStatus);
+    return () => { api?.update.offStatus(); };
+  }, [api]);
 
   useEffect(() => {
     return () => {
-      window.electronAPI.trinity.offLog();
-      window.electronAPI.trinity.offDone();
+      api?.trinity.offLog();
+      api?.trinity.offDone();
     };
-  }, []);
+  }, [api]);
 
   // ── Log handler ──────────────────────────────────────────────────────────
   const appendLog = useCallback((line: string) => {
@@ -203,12 +205,12 @@ export default function App() {
 
   // ── File Selection ─────────────────────────────────────────────────────
   const handleSelectFile = async () => {
-    if (isRunning) return;
+    if (isRunning || !api) return;
     try {
-      const selected = await window.electronAPI.dialog.openFile();
+      const selected = await api.dialog.openFile();
       if (!selected) return;
       setInputFile(selected);
-      setInputPreviewUrl(window.electronAPI.file.toPreviewUrl(selected));
+      setInputPreviewUrl(api!.file.toPreviewUrl(selected));
       setInputAudioTime(0);
       setInputAudioDuration(0);
       setInputIsPlaying(false);
@@ -230,7 +232,7 @@ export default function App() {
 
   // ── Processing ─────────────────────────────────────────────────────────
   const handleProcess = async () => {
-    if (!inputFile || isRunning) return;
+    if (!inputFile || isRunning || !api) return;
 
     setStatus('running');
     setCurrentStep(0);
@@ -257,13 +259,13 @@ export default function App() {
       }
     }, 1000);
 
-    window.electronAPI.trinity.offLog();
-    window.electronAPI.trinity.offDone();
-    window.electronAPI.trinity.onLog(appendLog);
-    window.electronAPI.trinity.onDone(setOutputFile);
+    api?.trinity.offLog();
+    api?.trinity.offDone();
+    api?.trinity.onLog(appendLog);
+    api?.trinity.onDone(setOutputFile);
 
     try {
-      const result = await window.electronAPI.trinity.runEngine({
+      const result = await api!.trinity.runEngine({
         filePath:     inputFile,
         mode:         engineMode,
         stereoWidth:  stereoOutput ? 0.5 : 0.0,
@@ -275,7 +277,7 @@ export default function App() {
         setStatus('done');
         setCurrentStep(STEPS.length);
         setOutputFile(result);
-        setPreviewUrl(window.electronAPI.file.toPreviewUrl(result));
+        setPreviewUrl(api!.file.toPreviewUrl(result));
         setExportFormat(outputFormat);
         appendLog('>> [VOXIS] RESTORATION COMPLETE');
         appendLog(`>> OUTPUT: ${basename(result)}`);
@@ -287,17 +289,17 @@ export default function App() {
       }
     } finally {
       if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-      window.electronAPI.trinity.offLog();
-      window.electronAPI.trinity.offDone();
+      api?.trinity.offLog();
+      api?.trinity.offDone();
     }
   };
 
   // ── Cancel ─────────────────────────────────────────────────────────────
   const handleCancel = async () => {
-    if (!isRunning) return;
+    if (!isRunning || !api) return;
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     try {
-      await window.electronAPI.trinity.cancelEngine();
+      await api!.trinity.cancelEngine();
       setStatus('idle');
       setCurrentStep(0);
       setElapsedSec(0);
@@ -308,12 +310,12 @@ export default function App() {
 
   // ── Save As ────────────────────────────────────────────────────────────
   const handleSaveAs = async () => {
-    if (!outputFile) return;
+    if (!outputFile || !api) return;
     const ext = exportFormat.toLowerCase() as string;
-    const dest = await window.electronAPI.dialog.saveFile(basename(outputFile), ext);
+    const dest = await api!.dialog.saveFile(basename(outputFile), ext);
     if (!dest) return;
     try {
-      await window.electronAPI.file.copy(outputFile, dest);
+      await api!.file.copy(outputFile, dest);
       setSaveStatus(`Saved → ${basename(dest)}`);
       appendLog(`>> [VOXIS] Exported to: ${dest}`);
     } catch (e) {
@@ -323,9 +325,9 @@ export default function App() {
 
   // ── Reveal ────────────────────────────────────────────────────────────
   const handleRevealOutput = async () => {
-    if (!outputFile) return;
+    if (!outputFile || !api) return;
     try {
-      await window.electronAPI.shell.openPath(outputFile);
+      await api!.shell.openPath(outputFile);
     } catch {
       appendLog(`[INFO] Output: ${outputFile}`);
     }
@@ -348,7 +350,7 @@ export default function App() {
             {updateStatus.type === 'available' && (
               <>
                 <span>UPDATE AVAILABLE — v{updateStatus.version}</span>
-                <motion.button className="btn-update" onClick={() => window.electronAPI.update.download()}
+                <motion.button className="btn-update" onClick={() => api!.update.download()}
                   whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}>
                   DOWNLOAD
                 </motion.button>
@@ -360,7 +362,7 @@ export default function App() {
             {updateStatus.type === 'downloaded' && (
               <>
                 <span>UPDATE READY — RESTART TO APPLY</span>
-                <motion.button className="btn-update btn-update-install" onClick={() => window.electronAPI.update.install()}
+                <motion.button className="btn-update btn-update-install" onClick={() => api!.update.install()}
                   whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}>
                   RESTART &amp; INSTALL
                 </motion.button>
@@ -378,7 +380,7 @@ export default function App() {
           <span className="brand-dense">DENSE</span>
         </div>
         <div className="header-subtitle">
-          AUDIO RESTORATION V4.0.0 | BY GLASS STONE
+          VOICE RESTORATION V4.0.0 | BY GLASS STONE
         </div>
         <div className="header-online">
           <span className="online-dot" />
@@ -559,7 +561,7 @@ export default function App() {
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
               >
-                {inputIsPlaying ? '||' : '\u25B6'}
+                {inputIsPlaying ? '||' : '▶'}
               </motion.button>
               <div className="file-info">
                 <div className="file-name">{basename(inputFile).toUpperCase()}</div>
@@ -635,9 +637,9 @@ export default function App() {
                       }
                     </motion.span>
                   ) : status === 'error' ? (
-                    <span className="status-error">\u25A0 ENGINE ERROR — CHECK LOG</span>
+                    <span className="status-error">{'■'} ENGINE ERROR — CHECK LOG</span>
                   ) : (
-                    <span className="status-idle">\u25CB STANDBY</span>
+                    <span className="status-idle">{'○'} STANDBY</span>
                   )}
                 </div>
 
@@ -671,7 +673,7 @@ export default function App() {
                           className={`ps-step ${isActive ? 'ps-active' : ''} ${isDone ? 'ps-done' : ''}`}
                         >
                           <span className="ps-indicator">
-                            {isDone ? '\u25A0' : isActive ? '\u25B6' : '\u25CB'}
+                            {isDone ? '■' : isActive ? '▶' : '○'}
                           </span>
                           <span className="ps-label">{step.label}</span>
                         </div>
@@ -748,7 +750,7 @@ export default function App() {
                     animate={{ scale: 1, y: 0 }}
                     transition={{ type: 'spring', stiffness: 300, damping: 25 }}
                   >
-                    <div className="completion-check">{'\u2713'}</div>
+                    <div className="completion-check">{'✓'}</div>
                     <h2 className="completion-title">RESTORATION COMPLETE</h2>
                     <p className="completion-sub">48kHz / Stereo</p>
 
