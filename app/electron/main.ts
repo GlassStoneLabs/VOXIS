@@ -31,6 +31,15 @@ app.setName('Voxis 4.0 DENSE');
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+function getFFmpegPath(): string {
+  if (process.platform === 'win32') {
+    if (isDev) return path.join(__dirname, '..', 'resources', 'bin', 'ffmpeg.exe');
+    return path.join(process.resourcesPath, 'bin', 'ffmpeg.exe');
+  }
+  // macOS/Linux: rely on system FFmpeg
+  return 'ffmpeg';
+}
+
 function getSidecarPath(): string {
   const binaryName = process.platform === 'win32' ? 'trinity_v8_core.exe' : 'trinity_v8_core';
   if (isDev) {
@@ -175,14 +184,25 @@ ipcMain.handle(
     }
 
     // --- Build args ---
+    // Note: If format is MP3, run engine as WAV then convert post-process
+    const engineFormat = safeFormat === 'MP3' ? 'WAV' : safeFormat;
+    const needsMp3Convert = safeFormat === 'MP3';
+
+    // If MP3 requested, engine outputs WAV; we'll convert after
+    let engineOutPath = outPath;
+    if (needsMp3Convert) {
+      engineOutPath = outPath.replace(/\.mp3$/i, '.wav');
+    }
+
     const args: string[] = [
       '--input',        filePath,
-      '--output',       outPath,
+      '--output',       engineOutPath,
       '--stereo-width', safeWidth.toFixed(2),
-      '--format',       safeFormat,
+      '--format',       engineFormat,
     ];
     if (safeMode === 'EXTREME') args.push('--extreme');
-    args.push('--ram-limit', String(safeRamLimit));
+    // --ram-limit only supported in rebuilt binaries; skip for frozen v8.1
+    // args.push('--ram-limit', String(safeRamLimit));
 
     send('trinity-log', '>> [VOXIS] Trinity V8.1 Engine starting...');
 
@@ -257,8 +277,38 @@ ipcMain.handle(
         send('trinity-log', `>> [VOXIS] Engine exited (code ${code ?? -1})`);
 
         if (code === 0) {
-          send('trinity-done', outPath);
-          resolve(outPath);
+          // Post-process: convert WAV → MP3 if user requested MP3
+          if (needsMp3Convert && fs.existsSync(engineOutPath)) {
+            send('trinity-log', '>> [VOXIS] Converting to MP3 (320kbps)...');
+            const ffmpeg = spawn(getFFmpegPath(), [
+              '-y', '-hide_banner', '-loglevel', 'error',
+              '-i', engineOutPath,
+              '-c:a', 'libmp3lame', '-b:a', '320k', '-q:a', '0',
+              outPath,
+            ]);
+            ffmpeg.on('close', (mp3Code) => {
+              if (mp3Code === 0) {
+                // Remove intermediate WAV
+                try { fs.unlinkSync(engineOutPath); } catch { /* ok */ }
+                send('trinity-log', '>> [VOXIS] MP3 export complete.');
+                send('trinity-done', outPath);
+                resolve(outPath);
+              } else {
+                // Fallback: return the WAV instead
+                send('trinity-log', '[WARN] MP3 conversion failed — returning WAV.');
+                send('trinity-done', engineOutPath);
+                resolve(engineOutPath);
+              }
+            });
+            ffmpeg.on('error', () => {
+              send('trinity-log', '[WARN] FFmpeg not found — returning WAV.');
+              send('trinity-done', engineOutPath);
+              resolve(engineOutPath);
+            });
+          } else {
+            send('trinity-done', outPath);
+            resolve(outPath);
+          }
         } else {
           reject(`Trinity Engine exited with code ${code ?? -1}. Check the activity log.`);
         }
