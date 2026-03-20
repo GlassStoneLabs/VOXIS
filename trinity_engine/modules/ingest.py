@@ -306,6 +306,24 @@ class AudioDecoder:
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
                 print(f"[{self.__class__.__name__}] FLAC encode failed, falling back to WAV.")
 
+        # ── MP3 export ───────────────────────────────────────────────
+        if fmt.upper() == "MP3":
+            mp3_path = os.path.splitext(output_path)[0] + ".mp3"
+            cmd = [
+                self.ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
+                "-i", processed_wav_path,
+                "-c:a", "libmp3lame",
+                "-b:a", "320k",
+                "-q:a", "0",
+                mp3_path,
+            ]
+            try:
+                subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=300)
+                print(f"[{self.__class__.__name__}] ✓ MP3 export (320kbps) → {mp3_path}")
+                return True
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                print(f"[{self.__class__.__name__}] MP3 encode failed, falling back to WAV.")
+
         # ── WAV fallback ─────────────────────────────────────────────
         shutil.copy2(processed_wav_path, output_path)
         print(f"[{self.__class__.__name__}] ✓ WAV export → {output_path}")

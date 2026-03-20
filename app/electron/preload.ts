@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       mode: string;
       stereoWidth: number;
       outputFormat: string;
+      ramLimit?: number;
     }): Promise<string> =>
       ipcRenderer.invoke('trinity:runEngine', params),
 

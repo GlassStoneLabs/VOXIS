@@ -10,14 +10,17 @@ class PipelineCache:
     Stores intermediate WAV outputs keyed by input file hash + params.
     Re-running the same file skips completed stages instantly.
     Stale caches older than TTL_SECONDS are purged on init.
+    Cache is capped at MAX_SIZE_GB to prevent disk bloat.
     """
     TTL_SECONDS = 86400  # 24 hours
+    MAX_SIZE_GB = 8.0    # 8 GB max cache size
 
     def __init__(self):
         home_dir = os.path.expanduser("~")
         self.cache_dir = os.path.join(home_dir, ".voxis", "cache")
         os.makedirs(self.cache_dir, exist_ok=True)
         self._purge_stale()
+        self._enforce_size_limit()
         print(f"[PipelineCache] Initialized → {self.cache_dir}")
 
     # ── Public API ──────────────────────────────────────────────────────
@@ -89,6 +92,41 @@ class PipelineCache:
         print(f"[PipelineCache] Invalidated cache for key {job_key}")
 
     # ── Internal ────────────────────────────────────────────────────────
+
+    def _enforce_size_limit(self):
+        """Evict oldest cache files if total cache exceeds MAX_SIZE_GB."""
+        try:
+            entries = []
+            total_bytes = 0
+            for fname in os.listdir(self.cache_dir):
+                fpath = os.path.join(self.cache_dir, fname)
+                if os.path.isfile(fpath):
+                    size = os.path.getsize(fpath)
+                    mtime = os.path.getmtime(fpath)
+                    entries.append((fpath, size, mtime))
+                    total_bytes += size
+
+            max_bytes = int(self.MAX_SIZE_GB * 1024**3)
+            if total_bytes <= max_bytes:
+                return
+
+            # Sort oldest first, evict until under limit
+            entries.sort(key=lambda x: x[2])
+            evicted = 0
+            for fpath, size, _ in entries:
+                if total_bytes <= max_bytes:
+                    break
+                try:
+                    os.remove(fpath)
+                    total_bytes -= size
+                    evicted += 1
+                except OSError:
+                    pass
+            if evicted:
+                remaining_gb = total_bytes / (1024**3)
+                print(f"[PipelineCache] Evicted {evicted} files to enforce {self.MAX_SIZE_GB}GB limit ({remaining_gb:.1f}GB remaining)")
+        except Exception as e:
+            print(f"[PipelineCache] Size limit enforcement failed: {e}")
 
     def _purge_stale(self):
         """Removes cached files older than TTL_SECONDS."""

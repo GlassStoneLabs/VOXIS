@@ -101,6 +101,75 @@ class DeviceOptimizer:
 
         return _ctx()
 
+    # ── RAM Budget Guard ─────────────────────────────────────────────────
+
+    _ram_limit_pct = 75  # Default 75% — set via CLI --ram-limit
+
+    @classmethod
+    def set_ram_limit(cls, pct: int):
+        """Set the RAM usage ceiling as a percentage of total system RAM (25-100)."""
+        cls._ram_limit_pct = max(25, min(100, pct))
+        print(f"[DeviceOptimizer] RAM limit set to {cls._ram_limit_pct}%")
+
+    @classmethod
+    def check_ram_budget(cls) -> dict:
+        """Check current RAM usage against the configured limit."""
+        try:
+            import psutil
+            vm = psutil.virtual_memory()
+            total_gb = vm.total / (1024**3)
+            used_gb  = vm.used / (1024**3)
+            avail_gb = vm.available / (1024**3)
+            limit_gb = total_gb * (cls._ram_limit_pct / 100.0)
+            usage_pct = round((used_gb / total_gb) * 100, 1)
+            return {
+                "total_gb":      round(total_gb, 2),
+                "used_gb":       round(used_gb, 2),
+                "available_gb":  round(avail_gb, 2),
+                "limit_gb":      round(limit_gb, 2),
+                "limit_pct":     cls._ram_limit_pct,
+                "usage_pct":     usage_pct,
+                "within_budget": used_gb <= limit_gb,
+            }
+        except ImportError:
+            return {"within_budget": True, "usage_pct": 0, "limit_pct": cls._ram_limit_pct}
+
+    @classmethod
+    def enforce_ram_limit(cls, stage_name: str = "") -> bool:
+        """
+        Enforce the RAM limit before loading a model.
+        If over budget, run GC + cache clear and re-check.
+        Returns True if within budget (ok to proceed), False if still over.
+        """
+        budget = cls.check_ram_budget()
+        if budget["within_budget"]:
+            return True
+
+        # Attempt cleanup
+        import gc
+        gc.collect()
+
+        try:
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            if hasattr(torch, 'mps') and hasattr(torch.mps, 'empty_cache'):
+                torch.mps.empty_cache()
+        except Exception:
+            pass
+
+        # Re-check after cleanup
+        budget = cls.check_ram_budget()
+        pct = budget.get("usage_pct", 0)
+        limit = budget.get("limit_pct", 75)
+
+        if not budget["within_budget"]:
+            print(f"[RAM GUARD] WARNING {stage_name}: RAM at {pct}% exceeds {limit}% limit "
+                  f"({budget.get('used_gb', '?')}GB / {budget.get('limit_gb', '?')}GB cap) — proceeding cautiously")
+            return False
+
+        print(f"[RAM GUARD] OK {stage_name}: RAM within budget after GC ({pct}%)")
+        return True
+
     @staticmethod
     def get_memory_info() -> dict:
         """

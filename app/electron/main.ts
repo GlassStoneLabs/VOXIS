@@ -129,19 +129,21 @@ ipcMain.handle(
       mode:         string;
       stereoWidth:  number;
       outputFormat: string;
+      ramLimit?:    number;
     },
   ): Promise<string> => {
-    const { filePath, mode, stereoWidth, outputFormat } = params;
+    const { filePath, mode, stereoWidth, outputFormat, ramLimit } = params;
 
     // --- Validate inputs ---
     if (!filePath || typeof filePath !== 'string') {
       return Promise.reject('Invalid file path.');
     }
     const validModes    = ['HIGH', 'EXTREME'];
-    const validFormats  = ['WAV', 'FLAC'];
+    const validFormats  = ['WAV', 'FLAC', 'MP3'];
     const safeMode      = validModes.includes(mode) ? mode : 'HIGH';
     const safeFormat    = validFormats.includes(outputFormat) ? outputFormat : 'WAV';
     const safeWidth     = Math.max(0, Math.min(1, stereoWidth ?? 0.5));
+    const safeRamLimit  = Math.max(25, Math.min(100, ramLimit ?? 75));
 
     // --- Guard: reject if already processing ---
     if (activeProcess) {
@@ -160,7 +162,7 @@ ipcMain.handle(
     const restoredDir = path.join(os.homedir(), 'Music', 'Voxis Restored');
     fs.mkdirSync(restoredDir, { recursive: true });
     const stem   = path.basename(filePath, path.extname(filePath));
-    const outExt = safeFormat === 'FLAC' ? 'flac' : 'wav';
+    const outExt = safeFormat === 'FLAC' ? 'flac' : safeFormat === 'MP3' ? 'mp3' : 'wav';
     const base   = path.join(restoredDir, `${stem}_voxis_mastered.${outExt}`);
     let outPath = base;
     let collision = 1;
@@ -177,6 +179,7 @@ ipcMain.handle(
       '--format',       safeFormat,
     ];
     if (safeMode === 'EXTREME') args.push('--extreme');
+    args.push('--ram-limit', String(safeRamLimit));
 
     send('trinity-log', '>> [VOXIS] Trinity V8.1 Engine starting...');
 
@@ -291,11 +294,12 @@ ipcMain.handle('shell:openFile', (_event, filePath: string) => {
 // ---------------------------------------------------------------------------
 ipcMain.handle('dialog:saveFile', async (_event, defaultName: string, ext: string) => {
   if (!mainWindow) return null;
-  const safeExt  = ['wav', 'flac'].includes(ext) ? ext : 'wav';
+  const safeExt  = ['wav', 'flac', 'mp3'].includes(ext) ? ext : 'wav';
+  const formatNames: Record<string, string> = { wav: 'WAV Audio', flac: 'FLAC Audio', mp3: 'MP3 Audio' };
   const result = await dialog.showSaveDialog(mainWindow, {
     defaultPath: path.join(os.homedir(), 'Music', defaultName),
     filters: [
-      { name: safeExt === 'flac' ? 'FLAC Audio' : 'WAV Audio', extensions: [safeExt] },
+      { name: formatNames[safeExt] ?? 'Audio', extensions: [safeExt] },
       { name: 'All Files', extensions: ['*'] },
     ],
   });

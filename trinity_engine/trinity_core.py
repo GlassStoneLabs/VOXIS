@@ -17,6 +17,7 @@
 
 import os
 import sys
+import gc
 import time
 import platform
 import argparse
@@ -75,6 +76,8 @@ class TrinityV8Desktop:
     @property
     def separator(self):
         if self._separator is None:
+            from modules.device_utils import DeviceOptimizer
+            DeviceOptimizer.enforce_ram_limit("SEPARATE (BS-RoFormer)")
             from modules.uvr_processor import GlassStoneSeparator
             self._separator = GlassStoneSeparator()
         return self._separator
@@ -89,6 +92,8 @@ class TrinityV8Desktop:
     @property
     def denoiser(self):
         if self._denoiser is None:
+            from modules.device_utils import DeviceOptimizer
+            DeviceOptimizer.enforce_ram_limit("DENOISE (VoiceRestore)")
             from modules.voicerestore_wrapper import VoiceRestoreWrapper
             self._denoiser = VoiceRestoreWrapper(mode=self._mode)
         return self._denoiser
@@ -96,6 +101,8 @@ class TrinityV8Desktop:
     @property
     def upscaler(self):
         if self._upscaler is None:
+            from modules.device_utils import DeviceOptimizer
+            DeviceOptimizer.enforce_ram_limit("UPSCALE (AudioSR)")
             from modules.upsampler import TrinityUpscaler
             self._upscaler = TrinityUpscaler(quality=self._mode)
         return self._upscaler
@@ -191,6 +198,7 @@ class TrinityV8Desktop:
             print(f"   ⏱ Ingest: {time.perf_counter() - t0:.2f}s")
 
             # ── STEP 2/6 · SEPARATE ─────────────────────────────────────
+            gc.collect()  # Free ingest buffers before loading separator model
             t0 = time.perf_counter()
             cached = self.cache.get(job_key, "02_separate")
             if cached:
@@ -224,6 +232,7 @@ class TrinityV8Desktop:
             print(f"   ⏱ Analyze: {time.perf_counter() - t0:.2f}s")
 
             # ── STEP 4/6 · DENOISE ──────────────────────────────────────
+            gc.collect()  # Free analyzer tensors before denoise model
             t0 = time.perf_counter()
             cached = self.cache.get(job_key, "04_denoise")
             if cached:
@@ -235,6 +244,7 @@ class TrinityV8Desktop:
             print(f"   ⏱ Denoise: {time.perf_counter() - t0:.2f}s")
 
             # ── STEP 5/6 · UPSCALE (post-diffusion denoise → then resample) ─
+            gc.collect()  # Free denoise model tensors before upscaler
             t0 = time.perf_counter()
             cached = self.cache.get(job_key, "05_upscale")
             if cached:
@@ -249,6 +259,7 @@ class TrinityV8Desktop:
             print(f"   ⏱ Upscale: {time.perf_counter() - t0:.2f}s")
 
             # ── STEP 6/6 · MASTER ───────────────────────────────────────
+            gc.collect()  # Free upscaler resources before mastering
             t0 = time.perf_counter()
             width = float(params['stereo_width'])
             cached = self.cache.get(job_key, "06_master")
@@ -308,9 +319,15 @@ if __name__ == "__main__":
     parser.add_argument("--extreme",      action="store_true", help="Use EXTREME denoise mode")
     parser.add_argument("--stereo-width", type=float, default=0.50,
                         help="Stereo width 0.0–1.0 (default 0.50)")
-    parser.add_argument("--format",       default="WAV", choices=["WAV", "FLAC"],
-                        help="Output format: WAV (default) or FLAC")
+    parser.add_argument("--format",       default="WAV", choices=["WAV", "FLAC", "MP3"],
+                        help="Output format: WAV (default), FLAC, or MP3")
+    parser.add_argument("--ram-limit",   type=int, default=75,
+                        help="RAM usage ceiling as percent of total system RAM (25-100, default 75)")
     args = parser.parse_args()
+
+    # Apply RAM limit globally before any model loading
+    from modules.device_utils import DeviceOptimizer
+    DeviceOptimizer.set_ram_limit(args.ram_limit)
 
     engine = TrinityV8Desktop()
     success = engine.run_pipeline(

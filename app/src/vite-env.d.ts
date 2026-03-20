@@ -12,6 +12,7 @@ interface Window {
         mode: string;
         stereoWidth: number;
         outputFormat: string;
+        ramLimit?: number;
       }) => Promise<string>;
       getVersion: () => Promise<string>;
       onLog: (callback: (line: string) => void) => void;
