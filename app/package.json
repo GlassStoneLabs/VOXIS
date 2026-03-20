@@ -2,6 +2,7 @@
   "name": "voxis",
   "private": true,
   "version": "4.0.0",
+  "productName": "Voxis 4.0 DENSE",
   "description": "VOXIS 4.0 DENSE — Professional Voice Restoration powered by Trinity V8.1",
   "author": {
     "name": "Glass Stone LLC",

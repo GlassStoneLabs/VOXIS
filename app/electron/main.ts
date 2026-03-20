@@ -25,6 +25,9 @@ let activeProcess: ChildProcess | null = null;
 
 const isDev = !app.isPackaged;
 
+// Force OS-level app name (menu bar, dock, Activity Monitor)
+app.setName('Voxis 4.0 DENSE');
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
