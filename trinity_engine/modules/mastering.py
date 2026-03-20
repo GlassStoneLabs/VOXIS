@@ -1,6 +1,5 @@
 import os
 import soundfile as sf
-import librosa
 from pedalboard import Pedalboard, Limiter, Compressor
 
 class PhaseLimiter:

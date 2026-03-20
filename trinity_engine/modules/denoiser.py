@@ -3,7 +3,7 @@ import torchaudio
 import os
 from df.enhance import enhance, init_df
 from df.io import load_audio, save_audio
-from .mps_utils import AppleSiliconOptimizer
+from .device_utils import DeviceOptimizer
 
 class DeepFilterNetWrapper:
     """
@@ -11,7 +11,7 @@ class DeepFilterNetWrapper:
     """
     def __init__(self, intensity="High", device=None):
         self.intensity = intensity
-        self.device = device if device else AppleSiliconOptimizer.initialize_device()
+        self.device = device if device else DeviceOptimizer.get_optimal_device()
              
         print(f"[{self.__class__.__name__}] Initializing DeepFilterNet3 on {self.device}...")
         

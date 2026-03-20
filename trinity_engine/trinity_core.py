@@ -38,7 +38,7 @@ os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 # ── Lightweight imports only (no ML frameworks at module level) ──────────────
 from modules.ingest import AudioDecoder
 from modules.error_telemetry import ErrorTelemetryController
-from modules.pipeline_cache import PipelineCache
+from modules.pipeline_cache import cache as pipeline_cache
 from modules.retry_engine import RetryEngine
 
 
@@ -56,7 +56,7 @@ class TrinityV8Desktop:
 
         # ── Infrastructure (lightweight) ─────────────────────────────────
         self.telemetry = ErrorTelemetryController()
-        self.cache     = PipelineCache()
+        self.cache     = pipeline_cache
         self.decoder   = AudioDecoder()
 
         # ── Lazy-loaded pipeline nodes (None until first use) ────────────
@@ -172,14 +172,22 @@ class TrinityV8Desktop:
                 pass
 
             # ── STEP 1/6 · INGEST ───────────────────────────────────────
+            # Import buffer: stat-based key (zero file I/O) checked first.
+            # Avoids reading the file at all on repeat imports of the same source.
             t0 = time.perf_counter()
-            cached = self.cache.get(job_key, "01_ingest")
-            if cached:
-                working_wav = cached
+            ingest_key = self.cache.make_ingest_key(input_path)
+            working_wav = self.cache.get(ingest_key, "01_ingest")
+            if working_wav:
+                print(">> [1/6] Import buffer hit — skipping FFmpeg decode.")
             else:
-                print(">> [1/6] Executing FFMPEG Decoder Extraction...")
-                working_wav = self.decoder.decode_to_wav(input_path)
-                self.cache.put(job_key, "01_ingest", working_wav)
+                cached = self.cache.get(job_key, "01_ingest")
+                if cached:
+                    working_wav = cached
+                else:
+                    print(">> [1/6] Executing FFMPEG Decoder Extraction...")
+                    working_wav = self.decoder.decode_to_wav(input_path)
+                    self.cache.put(job_key, "01_ingest", working_wav)
+                self.cache.put(ingest_key, "01_ingest", working_wav)
             print(f"   ⏱ Ingest: {time.perf_counter() - t0:.2f}s")
 
             # ── STEP 2/6 · SEPARATE ─────────────────────────────────────

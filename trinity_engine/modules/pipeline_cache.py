@@ -22,6 +22,16 @@ class PipelineCache:
 
     # ── Public API ──────────────────────────────────────────────────────
 
+    def make_ingest_key(self, input_path: str) -> str:
+        """
+        Zero-I/O import buffer key derived from file metadata (path + size + mtime).
+        Used as a fast pre-check before the ingest/decode stage to avoid reading
+        the file at all on cache hits — critical for large audio/video files.
+        """
+        stat = os.stat(input_path)
+        key_str = f"{os.path.abspath(input_path)}|{stat.st_size}|{stat.st_mtime}"
+        return "ib_" + hashlib.sha256(key_str.encode()).hexdigest()[:13]
+
     def make_job_key(self, input_path: str, params: dict) -> str:
         """
         Creates a deterministic SHA-256 hash from the input file contents
@@ -99,3 +109,7 @@ class PipelineCache:
                 print(f"[PipelineCache] Purged {purged} stale cache entries (>{self.TTL_SECONDS}s old)")
         except Exception as e:
             print(f"[PipelineCache] Purge scan failed: {e}")
+
+
+# Module-level singleton — initialized on import, shared across all pipeline instances
+cache = PipelineCache()

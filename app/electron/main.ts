@@ -186,7 +186,12 @@ ipcMain.handle(
       try {
         child = spawn(binaryPath, args, {
           stdio: ['ignore', 'pipe', 'pipe'],
-          env:   { ...process.env, PYTORCH_ENABLE_MPS_FALLBACK: '1' },
+          env:   {
+            ...process.env,
+            PYTORCH_ENABLE_MPS_FALLBACK: '1',
+            PYTHONUNBUFFERED:            '1',   // force line-flush when piped (fixes silent log)
+            PYTHONFAULTHANDLER:          '1',   // crash tracebacks visible in stderr
+          },
         });
         activeProcess = child;
       } catch (err) {
