@@ -167,8 +167,23 @@ pip install audiosr matplotlib --quiet
 # VoiceRestore (Transformer-Diffusion) + all transitive deps
 pip install huggingface_hub x-transformers gateloop-transformer jaxtyping torchdiffeq rotary-embedding-torch --quiet
 
+# Apple Silicon Neural Engine acceleration (CoreML)
+if [ "$ARCH" = "arm64" ]; then
+    pip install coremltools>=9.0 "scikit-learn==1.5.1" --quiet
+    ok "CoreML + scikit-learn installed (Neural Engine acceleration)"
+fi
+
+# ONNX cross-platform inference
+pip install onnxruntime --quiet
+
 # Telemetry & system
 pip install requests psutil --quiet
+
+# Install remaining dependencies from requirements.txt if present
+if [ -f "$INSTALL_DIR/requirements.txt" ]; then
+    pip install -r "$INSTALL_DIR/requirements.txt" --quiet
+    ok "All requirements.txt dependencies installed"
+fi
 
 ok "All dependencies installed"
 

@@ -129,7 +129,7 @@ if $DO_BINARY; then
     "scipy" "numpy" "psutil" "requests" "certifi"
     "pedalboard" "transformers" "tokenizers"
     "huggingface_hub" "einops" "omegaconf" "filelock"
-    "packaging" "onnxruntime"
+    "packaging" "onnxruntime" "coremltools" "sklearn"
   )
 
   MISSING=()

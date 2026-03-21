@@ -1,0 +1,57 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Voxis 4.0 DENSE",
+  "version": "4.0.0",
+  "identifier": "com.glassstone.voxis",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Voxis 4.0 DENSE — Glass Stone LLC",
+        "width": 1120,
+        "height": 820,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true,
+        "minWidth": 900,
+        "minHeight": 700
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "resources": {
+      "../../trinity_engine/dependencies/models": "dependencies/models"
+    },
+    "externalBin": [
+      "binaries/trinity_v8_core"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "12.0",
+      "entitlements": null,
+      "signingIdentity": null,
+      "providerShortName": null
+    },
+    "publisher": "Glass Stone LLC",
+    "copyright": "Copyright © 2026 Glass Stone LLC. All Rights Reserved.",
+    "longDescription": "Voxis 4.0 DENSE is a professional-grade audio restoration and enhancement application powered by Trinity V8.1. Built by Glass Stone LLC, CEO Gabriel B. Rodriguez.",
+    "shortDescription": "Professional audio restoration powered by Trinity V8.1",
+    "category": "Music"
+  }
+}

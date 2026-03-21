@@ -32,8 +32,9 @@ yarn-error.log*
 dist/
 out/
 
-# Rust / Tauri (removed — migrated to Electron)
-app/src-tauri/
+# Rust / Tauri (track source, ignore build artifacts)
+app/src-tauri/target/
+app/src-tauri/gen/
 app/public/tauri.svg
 
 # Electron sidecar binary (628MB — distribute separately)
@@ -82,3 +83,7 @@ test_venv2/
 *.log
 dependencies/
 VOXIS_4.0_DENSE_macOS.zip
+
+# Test & Misc
+GlassStoneLabs-Enron-test*/
+.claude/

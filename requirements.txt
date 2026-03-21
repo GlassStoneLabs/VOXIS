@@ -1,0 +1,60 @@
+# VOXIS V4.0.0 DENSE — Python Dependencies
+# Copyright © 2026 Glass Stone LLC. All Rights Reserved.
+# CEO: Gabriel B. Rodriguez
+#
+# Install: pip install -r requirements.txt
+# Tested on: Python 3.11 / macOS arm64 + Windows x64
+
+# ── Core ML Framework ──────────────────────────────────────────────
+torch==2.6.0
+torchaudio==2.6.0
+torchvision==0.21.0
+
+# ── Audio Processing ──────────────────────────────────────────────
+librosa==0.9.2
+soundfile==0.13.1
+pedalboard==0.9.21
+pydub==0.25.1
+resampy==0.4.3
+soxr==1.0.0
+
+# ── Source Separation (GS-PRISM) ──────────────────────────────────
+audio-separator>=0.14.3
+
+# ── Neural Restoration (GS-CRYSTAL / VoiceRestore) ───────────────
+huggingface_hub>=0.24.6
+x-transformers>=2.16.2
+gateloop-transformer>=0.2.5
+jaxtyping>=0.3.9
+torchdiffeq>=0.2.4
+rotary-embedding-torch>=0.6.5
+einops>=0.8.2
+
+# ── Super-Resolution (GS-ASCEND / AudioSR) ──────────────────────
+audiosr>=0.0.7
+
+# ── Acceleration ─────────────────────────────────────────────────
+coremltools>=9.0                # macOS Neural Engine (Apple Silicon)
+onnxruntime>=1.24.0             # Cross-platform ONNX inference
+scikit-learn==1.5.1             # Required by coremltools (max 1.5.1)
+
+# ── Inference Utilities ──────────────────────────────────────────
+numpy==1.23.5
+scipy>=1.14.1
+safetensors>=0.7.0
+tokenizers>=0.13.3
+transformers>=4.30.2
+omegaconf>=2.3.0
+
+# ── System & Telemetry ───────────────────────────────────────────
+psutil>=7.0.0
+requests>=2.32.0
+certifi>=2026.2.25
+filelock>=3.25.0
+packaging>=23.2
+tqdm>=4.66.0
+PyYAML>=6.0.0
+
+# ── Build & Packaging ───────────────────────────────────────────
+setuptools>=69.5.1
+matplotlib>=3.9.0
