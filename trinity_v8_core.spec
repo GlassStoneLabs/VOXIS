@@ -57,6 +57,7 @@ hiddenimports = [
     'modules.path_utils',
     'modules.coreml_bridge',
     'modules.onnx_bridge',
+    'modules.adaptive_chunker',
     'modules.uvr_processor',
     'modules.spectrum_analyzer',
     'modules.voicerestore_wrapper',

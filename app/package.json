@@ -13,6 +13,10 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "tauri:build:win": "tauri build --target x86_64-pc-windows-msvc",
     "electron:compile": "tsc -p electron/tsconfig.json",
     "electron:dev": "tsc -p electron/tsconfig.json && concurrently -k \"vite\" \"tsc -p electron/tsconfig.json -w\" \"electron .\"",
     "electron:build": "npm run build && npm run electron:compile && electron-builder",
@@ -26,6 +30,10 @@
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@tauri-apps/api": "^2.5.0",
+    "@tauri-apps/cli": "^2.5.0",
+    "@tauri-apps/plugin-dialog": "^2.2.0",
+    "@tauri-apps/plugin-shell": "^2.2.0",
     "@types/node": "^25.4.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
