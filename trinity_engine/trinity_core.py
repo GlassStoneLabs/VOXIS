@@ -5,10 +5,10 @@
 #
 # Pipeline:
 #   1. INGEST      — FFmpeg universal decode (audio + video)
-#   2. SEPARATE    — Glass Stone Separator (BS-RoFormer)
+#   2. SEPARATE    — GS-PRISM Voice Isolation
 #   3. ANALYZE     — Spectrum Noise Profile + Auto-EQ
-#   4. DENOISE     — DeepFilterNet3 (Pre-Diffusion)
-#   5. UPSCALE     — AudioSR latent diffusion 48kHz + post-diffusion denoise
+#   4. DENOISE     — GS-CRYSTAL Neural Restoration (Pre-Diffusion)
+#   5. UPSCALE     — GS-ASCEND Latent Diffusion 48kHz + post-diffusion denoise
 #   6. MASTER      — Pedalboard Limiter + Stereo Width
 #   7. EXPORT      — 24-bit WAV or FLAC
 #
@@ -61,12 +61,14 @@ class TrinityV8Desktop:
         self.decoder   = AudioDecoder()
 
         # ── Lazy-loaded pipeline nodes (None until first use) ────────────
-        self._separator = None
-        self._profiler  = None
-        self._denoiser  = None
-        self._upscaler  = None
-        self._limiter   = None
-        self._mode      = "HIGH"
+        self._separator        = None
+        self._profiler         = None
+        self._denoiser         = None
+        self._upscaler         = None
+        self._limiter          = None
+        self._mode             = "HIGH"
+        self._denoise_steps    = 32
+        self._denoise_strength = 0.65
 
         init_time = time.perf_counter() - t0
         print(f">> [SYSTEM] Engine ready in {init_time:.2f}s (models load on demand)")
@@ -77,7 +79,7 @@ class TrinityV8Desktop:
     def separator(self):
         if self._separator is None:
             from modules.device_utils import DeviceOptimizer
-            DeviceOptimizer.enforce_ram_limit("SEPARATE (BS-RoFormer)")
+            DeviceOptimizer.enforce_ram_limit("SEPARATE (GS-PRISM)")
             from modules.uvr_processor import GlassStoneSeparator
             self._separator = GlassStoneSeparator()
         return self._separator
@@ -93,16 +95,20 @@ class TrinityV8Desktop:
     def denoiser(self):
         if self._denoiser is None:
             from modules.device_utils import DeviceOptimizer
-            DeviceOptimizer.enforce_ram_limit("DENOISE (VoiceRestore)")
+            DeviceOptimizer.enforce_ram_limit("DENOISE (GS-CRYSTAL)")
             from modules.voicerestore_wrapper import VoiceRestoreWrapper
-            self._denoiser = VoiceRestoreWrapper(mode=self._mode)
+            self._denoiser = VoiceRestoreWrapper(
+                mode=self._mode,
+                steps_override=self._denoise_steps,
+                cfg_override=self._denoise_strength,
+            )
         return self._denoiser
 
     @property
     def upscaler(self):
         if self._upscaler is None:
             from modules.device_utils import DeviceOptimizer
-            DeviceOptimizer.enforce_ram_limit("UPSCALE (AudioSR)")
+            DeviceOptimizer.enforce_ram_limit("UPSCALE (GS-ASCEND)")
             from modules.upsampler import TrinityUpscaler
             self._upscaler = TrinityUpscaler(quality=self._mode)
         return self._upscaler
@@ -116,15 +122,15 @@ class TrinityV8Desktop:
 
     # ── Retry-wrapped stage methods ─────────────────────────────────────
 
-    @RetryEngine.resilient_stage("SEPARATE (BS-RoFormer)", retries=2, fallback="passthrough")
+    @RetryEngine.resilient_stage("SEPARATE (GS-PRISM)", retries=2, fallback="passthrough")
     def _stage_separate(self, input_wav):
         return self.separator.process(input_wav)
 
-    @RetryEngine.resilient_stage("DENOISE (DeepFilterNet3)", retries=3, fallback="cpu_retry")
+    @RetryEngine.resilient_stage("DENOISE (GS-CRYSTAL)", retries=3, fallback="cpu_retry")
     def _stage_denoise(self, input_wav, stage="pre-diffusion"):
         return self.denoiser.process(input_wav, stage=stage)
 
-    @RetryEngine.resilient_stage("UPSCALE (AudioSR)", retries=2, fallback="passthrough")
+    @RetryEngine.resilient_stage("UPSCALE (GS-ASCEND)", retries=2, fallback="passthrough")
     def _stage_upscale(self, input_wav, target_sr=48000):
         return self.upscaler.super_resolve(input_wav, target_sr=target_sr)
 
@@ -156,10 +162,14 @@ class TrinityV8Desktop:
               f"Format: {params.get('output_format', 'WAV')}")
         print(f"{'='*60}\n")
 
-        # Apply mode — invalidate lazy instances if mode changed
-        mode = params.get('denoise_mode', 'HIGH')
-        if mode != self._mode:
-            self._mode = mode
+        # Apply params — invalidate denoiser/upscaler if settings changed
+        mode     = params.get('denoise_mode', 'HIGH')
+        steps    = int(params.get('denoise_steps', 16))
+        strength = float(params.get('denoise_strength', 0.55))
+        if mode != self._mode or steps != self._denoise_steps or strength != self._denoise_strength:
+            self._mode             = mode
+            self._denoise_steps    = steps
+            self._denoise_strength = strength
             self._denoiser = None
             self._upscaler = None
 
@@ -204,7 +214,7 @@ class TrinityV8Desktop:
             if cached:
                 vocal_wav = cached
             else:
-                print(">> [2/6] Executing Glass Stone Separator (BS-RoFormer)...")
+                print(">> [2/6] Executing GS-PRISM Voice Isolation...")
                 vocal_wav = self._stage_separate(working_wav)
                 self.cache.put(job_key, "02_separate", vocal_wav)
             print(f"   ⏱ Separate: {time.perf_counter() - t0:.2f}s")
@@ -238,7 +248,7 @@ class TrinityV8Desktop:
             if cached:
                 enhanced_wav_1 = cached
             else:
-                print(">> [4/6] Neural Denoise Inference (DeepFilterNet3)...")
+                print(">> [4/6] GS-CRYSTAL Neural Restoration (Pre-Diffusion)...")
                 enhanced_wav_1 = self._stage_denoise(vocal_wav, stage="pre-diffusion")
                 self.cache.put(job_key, "04_denoise", enhanced_wav_1)
             print(f"   ⏱ Denoise: {time.perf_counter() - t0:.2f}s")
@@ -250,7 +260,7 @@ class TrinityV8Desktop:
             if cached:
                 enhanced_wav_2 = cached
             else:
-                print(">> [5/6] Trinity AudioSR Diffusion Upscale to 48kHz...")
+                print(">> [5/6] GS-ASCEND Latent Diffusion Upscale to 48kHz...")
                 # Post-diffusion cleanup FIRST (VoiceRestore outputs 24kHz),
                 # then upscale so the final sample rate sticks at 48kHz.
                 post_denoised = self._stage_denoise(enhanced_wav_1, stage="post-diffusion")
@@ -303,8 +313,8 @@ class TrinityV8Desktop:
     def cleanup(self):
         """Purges the trinity_temp working directory after a successful run."""
         import shutil
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        temp_dir = os.path.join(base_dir, "trinity_temp")
+        from modules.path_utils import get_engine_base_dir
+        temp_dir = os.path.join(get_engine_base_dir(), "trinity_temp")
         if os.path.isdir(temp_dir):
             shutil.rmtree(temp_dir, ignore_errors=True)
             print("[Cleanup] Purged trinity_temp working directory.")
@@ -316,13 +326,17 @@ if __name__ == "__main__":
     )
     parser.add_argument("--input",        required=True,  help="Input audio/video file path")
     parser.add_argument("--output",       required=True,  help="Output file path")
-    parser.add_argument("--extreme",      action="store_true", help="Use EXTREME denoise mode")
-    parser.add_argument("--stereo-width", type=float, default=0.50,
+    parser.add_argument("--extreme",           action="store_true", help="Use EXTREME denoise mode")
+    parser.add_argument("--stereo-width",      type=float, default=0.50,
                         help="Stereo width 0.0–1.0 (default 0.50)")
-    parser.add_argument("--format",       default="WAV", choices=["WAV", "FLAC", "MP3"],
+    parser.add_argument("--format",            default="WAV", choices=["WAV", "FLAC", "MP3"],
                         help="Output format: WAV (default), FLAC, or MP3")
-    parser.add_argument("--ram-limit",   type=int, default=75,
+    parser.add_argument("--ram-limit",         type=int, default=75,
                         help="RAM usage ceiling as percent of total system RAM (25-100, default 75)")
+    parser.add_argument("--denoise-steps",     type=int, default=32,
+                        help="GS-CRYSTAL diffusion steps (8–64, default 32)")
+    parser.add_argument("--denoise-strength",  type=float, default=0.65,
+                        help="GS-CRYSTAL CFG strength 0.1–1.0 (default 0.65)")
     args = parser.parse_args()
 
     # Apply RAM limit globally before any model loading
@@ -334,9 +348,11 @@ if __name__ == "__main__":
         input_path=args.input,
         output_path=args.output,
         params={
-            "denoise_mode":  "EXTREME" if args.extreme else "HIGH",
-            "stereo_width":  args.stereo_width,
-            "output_format": args.format,
+            "denoise_mode":     "EXTREME" if args.extreme else "HIGH",
+            "stereo_width":     args.stereo_width,
+            "output_format":    args.format,
+            "denoise_steps":    args.denoise_steps,
+            "denoise_strength": args.denoise_strength,
         }
     )
 

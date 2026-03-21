@@ -4,7 +4,6 @@ import uuid
 import time
 import threading
 from datetime import datetime
-from .path_utils import get_engine_base_dir
 
 class ErrorTelemetryController:
     """
@@ -14,7 +13,7 @@ class ErrorTelemetryController:
     def __init__(self, api_endpoint="https://api.glass-stone.com/v1/telemetry/errors"):
         self.api_endpoint = api_endpoint
         
-        self.cache_dir = os.path.join(get_engine_base_dir(), "dependencies", "error_cache")
+        self.cache_dir = os.path.join(os.path.expanduser("~"), ".voxis", "error_cache")
         self.cache_file = os.path.join(self.cache_dir, "cache.json")
         self._lock = threading.Lock()
         

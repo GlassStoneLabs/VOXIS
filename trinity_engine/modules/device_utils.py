@@ -1,3 +1,4 @@
+import platform
 import torch
 
 class DeviceOptimizer:
@@ -37,6 +38,33 @@ class DeviceOptimizer:
     @staticmethod
     def is_mps_available() -> bool:
         return hasattr(torch.backends, 'mps') and torch.backends.mps.is_available()
+
+    @staticmethod
+    def is_apple_silicon() -> bool:
+        """True on Apple Silicon (M-series) macOS."""
+        return platform.system() == "Darwin" and platform.machine() == "arm64"
+
+    @staticmethod
+    def is_coreml_available() -> bool:
+        """True when coremltools is installed and running on Apple Silicon."""
+        if not DeviceOptimizer.is_apple_silicon():
+            return False
+        try:
+            import coremltools  # noqa: F401
+            return True
+        except ImportError:
+            return False
+
+    @staticmethod
+    def get_acceleration_summary() -> str:
+        """Human-readable acceleration path for current hardware."""
+        if DeviceOptimizer.is_coreml_available():
+            return "CoreML (Neural Engine + GPU + CPU)"
+        if DeviceOptimizer.is_mps_available():
+            return "MPS (Apple GPU)"
+        if DeviceOptimizer.is_cuda_available():
+            return "CUDA (NVIDIA GPU)"
+        return "CPU"
 
     @staticmethod
     def move_to_optimal_device(tensor: torch.Tensor) -> torch.Tensor:
@@ -169,6 +197,19 @@ class DeviceOptimizer:
 
         print(f"[RAM GUARD] OK {stage_name}: RAM within budget after GC ({pct}%)")
         return True
+
+    @staticmethod
+    def cleanup_memory():
+        """Release GPU/MPS cache and run Python GC. Call after each pipeline stage."""
+        import gc
+        gc.collect()
+        try:
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            if hasattr(torch, 'mps') and hasattr(torch.mps, 'empty_cache'):
+                torch.mps.empty_cache()
+        except Exception:
+            pass
 
     @staticmethod
     def get_memory_info() -> dict:

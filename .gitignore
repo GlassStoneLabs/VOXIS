@@ -81,3 +81,4 @@ test_venv2/
 *.mkv
 *.log
 dependencies/
+VOXIS_4.0_DENSE_macOS.zip

@@ -54,13 +54,24 @@ hiddenimports = [
     # Voxis pipeline modules (v8.1 resilient backend)
     'modules.ingest',
     'modules.device_utils',
+    'modules.path_utils',
+    'modules.coreml_bridge',
     'modules.uvr_processor',
-    'modules.deep_filter',
+    'modules.spectrum_analyzer',
+    'modules.voicerestore_wrapper',
     'modules.upsampler',
     'modules.mastering_phase',
     'modules.error_telemetry',
     'modules.pipeline_cache',
     'modules.retry_engine',
+    # Apple CoreML
+    'coremltools', 'coremltools.models', 'coremltools.models.MLModel',
+    'coremltools.converters', 'coremltools.converters.mil',
+    'coremltools.converters.mil.frontend.torch',
+    'coremltools.converters.mil.frontend.torch.ops',
+    'coremltools.proto', 'coremltools.optimize',
+    # ONNX Runtime CoreML provider
+    'onnxruntime', 'onnxruntime.capi', 'onnxruntime.capi._pybind_state',
     # VoiceRestore
     'model', 'BigVGAN', 'bigvgan', 'voice_restore',
     'pkg_resources',
@@ -93,6 +104,10 @@ except Exception:
     pass
 try:
     datas += collect_data_files('language_tags', includes=['**/*'])
+except Exception:
+    pass
+try:
+    datas += collect_data_files('coremltools', includes=['**/*.py', '**/*.proto', '**/*.mlmodel'])
 except Exception:
     pass
 

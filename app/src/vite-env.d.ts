@@ -8,11 +8,13 @@ interface Window {
     };
     trinity: {
       runEngine: (params: {
-        filePath: string;
-        mode: string;
-        stereoWidth: number;
-        outputFormat: string;
-        ramLimit?: number;
+        filePath:         string;
+        mode:             string;
+        stereoWidth:      number;
+        outputFormat:     string;
+        ramLimit?:        number;
+        denoiseStrength?: number;
+        denoiseSteps?:    number;
       }) => Promise<string>;
       getVersion: () => Promise<string>;
       onLog: (callback: (line: string) => void) => void;

@@ -37,21 +37,14 @@ class PipelineCache:
 
     def make_job_key(self, input_path: str, params: dict) -> str:
         """
-        Creates a deterministic SHA-256 hash from the input file contents
-        plus the serialized pipeline parameters.
+        Creates a deterministic hash from file stat metadata (path + size + mtime)
+        plus the serialized pipeline parameters. Zero file I/O — stat only.
         """
-        hasher = hashlib.sha256()
-
-        # Hash file contents (first 4MB for speed on large files)
-        with open(input_path, "rb") as f:
-            chunk = f.read(4 * 1024 * 1024)
-            hasher.update(chunk)
-
-        # Hash params
+        stat = os.stat(input_path)
+        key_str = f"{os.path.abspath(input_path)}|{stat.st_size}|{stat.st_mtime}"
         param_str = json.dumps(params, sort_keys=True)
-        hasher.update(param_str.encode("utf-8"))
-
-        return hasher.hexdigest()[:16]  # 16-char short hash
+        combined = key_str + "|" + param_str
+        return "jk_" + hashlib.sha256(combined.encode()).hexdigest()[:13]
 
     def get(self, job_key: str, stage: str) -> str | None:
         """
@@ -74,14 +67,21 @@ class PipelineCache:
 
     def put(self, job_key: str, stage: str, wav_path: str) -> str:
         """
-        Copies the stage output WAV into cache and returns the cached path.
+        Hardlinks the stage output WAV into cache (instant, no data copy).
+        Falls back to copy if cross-device or filesystem doesn't support links.
         """
         cached_path = os.path.join(self.cache_dir, f"{job_key}_{stage}.wav")
         try:
-            shutil.copy2(wav_path, cached_path)
+            if os.path.exists(cached_path):
+                os.remove(cached_path)
+            os.link(wav_path, cached_path)
             print(f"[PipelineCache] 💾 CACHED     → {stage}")
-        except Exception as e:
-            print(f"[PipelineCache] Cache write failed for {stage}: {e}")
+        except OSError:
+            try:
+                shutil.copy2(wav_path, cached_path)
+                print(f"[PipelineCache] 💾 CACHED     → {stage} (copy fallback)")
+            except Exception as e:
+                print(f"[PipelineCache] Cache write failed for {stage}: {e}")
         return cached_path
 
     def invalidate(self, job_key: str):

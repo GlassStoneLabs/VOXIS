@@ -13,21 +13,29 @@ type OutputFormat   = 'WAV' | 'FLAC' | 'MP3';
 type PipelineStatus = 'idle' | 'running' | 'done' | 'error';
 
 interface Step {
-  id:       number;
-  label:    string;
-  sublabel: string;
-  matchStr: string;
+  id:          number;
+  label:       string;
+  sublabel:    string;
+  matchStr:    string;
+  description: string;
 }
 
 // ── Constants ───────────────────────────────────────────────────────────────
 const STEPS: Step[] = [
-  { id: 1, label: 'INGEST',   sublabel: 'FFmpeg Universal Decode',      matchStr: '[1/6]' },
-  { id: 2, label: 'SEPARATE', sublabel: 'BS-RoFormer Voice Isolation',   matchStr: '[2/6]' },
-  { id: 3, label: 'ANALYZE',  sublabel: 'Spectrum + Auto-EQ Profile',    matchStr: '[3/6]' },
-  { id: 4, label: 'DENOISE',  sublabel: 'VoiceRestore Enhancement',      matchStr: '[4/6]' },
-  { id: 5, label: 'UPSCALE',  sublabel: 'AudioSR Diffusion → 48kHz',    matchStr: '[5/6]' },
-  { id: 6, label: 'MASTER',   sublabel: 'Harman Curve Mastering',        matchStr: '[6/6]' },
-  { id: 7, label: 'EXPORT',   sublabel: '24-bit Output',                 matchStr: 'Finalizing Export' },
+  { id: 1, label: 'GATEWAY',  sublabel: 'FFmpeg Universal Decode',       matchStr: '[1/6]',
+    description: 'Decodes any audio or video format into a standardized 44.1kHz stereo WAV using FFmpeg. Supports MP3, FLAC, AAC, OGG, MP4, MOV, and more.' },
+  { id: 2, label: 'PRISM',    sublabel: 'GS-PRISM Voice Isolation',     matchStr: '[2/6]',
+    description: 'Splits the signal like light through glass — GS-PRISM isolates vocals from background music and instruments using the Glass Stone proprietary separation model.' },
+  { id: 3, label: 'SPECTRAL', sublabel: 'Spectrum + Auto-EQ Profile',    matchStr: '[3/6]',
+    description: 'Reads the full frequency spectrum to detect noise characteristics and compute optimal EQ settings. Auto-generates high-pass, low-pass, and vocal presence adjustments.' },
+  { id: 4, label: 'PURIFY',   sublabel: 'GS-CRYSTAL Neural Restore',    matchStr: '[4/6]',
+    description: 'Glass Stone purity pass — GS-CRYSTAL removes background noise, hiss, hum, and artifacts using a 301M parameter transformer-diffusion model that reconstructs clean speech.' },
+  { id: 5, label: 'ASCEND',   sublabel: 'GS-ASCEND Diffusion → 48kHz', matchStr: '[5/6]',
+    description: 'GS-ASCEND elevates audio to studio-quality 48kHz using Glass Stone latent diffusion. Recovers lost high-frequency detail and restores clarity that compression destroyed.' },
+  { id: 6, label: 'TEMPER',   sublabel: 'GS-TEMPER Harman Mastering',   matchStr: '[6/6]',
+    description: 'Like tempered glass — hardened and perfected. GS-TEMPER applies Harman curve EQ for vocal warmth, presence, and controlled sibilance. Normalizes to -1 dBFS with a brickwall limiter.' },
+  { id: 7, label: 'CAST',     sublabel: '24-bit Output',                 matchStr: 'Finalizing Export',
+    description: 'Cast in glass — the final permanent form. Multiplexes the restored audio into WAV, FLAC, or MP3 at 24-bit depth with full metadata preservation.' },
 ];
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -39,7 +47,7 @@ function detectStep(line: string): number | null {
   for (const s of STEPS) {
     if (line.includes(s.matchStr)) return s.id;
   }
-  if (line.includes('Restoration Complete')) return 7;
+  if (line.includes('Restoration Complete') || line.includes('RESTORATION COMPLETE')) return 7;
   return null;
 }
 
@@ -80,10 +88,10 @@ export default function App() {
   const [upscaleFactor,  setUpscaleFactor]  = useState<UpscaleFactor>(4);
   const [outputFormat,   setOutputFormat]   = useState<OutputFormat>('FLAC');
   const [exportFormat,   setExportFormat]   = useState<OutputFormat>('FLAC');
-  const [denoiseStrength, setDenoiseStrength] = useState(82);
+  const [denoiseStrength, setDenoiseStrength] = useState(55);
   const [noiseProfile,   setNoiseProfile]   = useState('AUTO');
-  const [restorationSteps, setRestorationSteps] = useState(44);
-  const [generationGuidance, setGenerationGuidance] = useState(1.20);
+  const [restorationSteps, setRestorationSteps] = useState(16);
+  const [generationGuidance, setGenerationGuidance] = useState(0.50);
   const [highPrecision,  setHighPrecision]  = useState(true);
   const [stereoOutput,   setStereoOutput]   = useState(true);
   const [ramLimit,       setRamLimit]       = useState(75);
@@ -133,6 +141,25 @@ export default function App() {
 
   // Safe accessor — undefined in browser preview, defined in Electron
   const api = typeof window !== 'undefined' ? window.electronAPI : undefined;
+
+  // ── Sync sliders to processing mode ──────────────────────────────────────
+  useEffect(() => {
+    if (isRunning) return;
+    if (processingMode === 'EXTREME') {
+      setDenoiseStrength(75);
+      setRestorationSteps(48);
+      setGenerationGuidance(0.70);
+    } else if (processingMode === 'STANDARD') {
+      setDenoiseStrength(55);
+      setRestorationSteps(16);
+      setGenerationGuidance(0.50);
+    } else {
+      // QUICK
+      setDenoiseStrength(40);
+      setRestorationSteps(8);
+      setGenerationGuidance(0.35);
+    }
+  }, [processingMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Lifecycle ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -266,11 +293,13 @@ export default function App() {
 
     try {
       const result = await api!.trinity.runEngine({
-        filePath:     inputFile,
-        mode:         engineMode,
-        stereoWidth:  stereoOutput ? 0.5 : 0.0,
+        filePath:        inputFile,
+        mode:            engineMode,
+        stereoWidth:     stereoOutput ? 0.5 : 0.0,
         outputFormat,
         ramLimit,
+        denoiseStrength: denoiseStrength / 100.0,  // 0–100% → 0.0–1.0
+        denoiseSteps:    restorationSteps,
       });
 
       if (mountedRef.current) {
@@ -470,7 +499,6 @@ export default function App() {
               disabled={isRunning}
             >
               <option value="AUTO">AUTO (SMART)</option>
-              <option value="MUSIC">MUSIC</option>
               <option value="PODCAST">PODCAST</option>
               <option value="VOICE">VOICE</option>
             </select>
@@ -514,6 +542,7 @@ export default function App() {
                 <span className="toggle-track green" />
               </label>
             </div>
+            <div className="sb-desc">32-bit float processing. Reduces rounding artifacts on quiet audio.</div>
           </div>
 
           {/* Stereo Output */}
@@ -526,6 +555,7 @@ export default function App() {
                 <span className="toggle-track blue" />
               </label>
             </div>
+            <div className="sb-desc">Preserve left/right channels. Disable for mono mic recordings.</div>
           </div>
 
           {/* RAM Limit */}
@@ -605,6 +635,30 @@ export default function App() {
             {status !== 'done' && (
               <div className="pipeline-content">
 
+                {/* ── Pipeline Guide (idle state) ── */}
+                {!isRunning && status !== 'error' && (
+                  <div className="pipeline-guide">
+                    <div className="guide-header">HOW IT WORKS</div>
+                    <div className="guide-subtitle">
+                      Voxis restores degraded audio through a 7-stage neural pipeline.
+                      Each step builds on the last to deliver studio-quality results.
+                    </div>
+                    <div className="guide-steps">
+                      {STEPS.map(step => (
+                        <div key={step.id} className="guide-step">
+                          <div className="guide-step-num">{step.id}</div>
+                          <div className="guide-step-content">
+                            <div className="guide-step-title">
+                              {step.label} <span className="guide-step-sub">— {step.sublabel}</span>
+                            </div>
+                            <div className="guide-step-desc">{step.description}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Progress bar */}
                 <AnimatePresence>
                   {isRunning && (
@@ -663,23 +717,38 @@ export default function App() {
 
                 {/* Pipeline steps (compact) */}
                 {isRunning && (
-                  <div className="pipeline-steps-compact">
-                    {STEPS.map(step => {
-                      const isActive = currentStep === step.id && isRunning;
-                      const isDone   = currentStep > step.id;
-                      return (
-                        <div
-                          key={step.id}
-                          className={`ps-step ${isActive ? 'ps-active' : ''} ${isDone ? 'ps-done' : ''}`}
-                        >
-                          <span className="ps-indicator">
-                            {isDone ? '■' : isActive ? '▶' : '○'}
-                          </span>
-                          <span className="ps-label">{step.label}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <>
+                    <div className="pipeline-steps-compact">
+                      {STEPS.map(step => {
+                        const isActive = currentStep === step.id && isRunning;
+                        const isDone   = currentStep > step.id;
+                        return (
+                          <div
+                            key={step.id}
+                            className={`ps-step ${isActive ? 'ps-active' : ''} ${isDone ? 'ps-done' : ''}`}
+                          >
+                            <span className="ps-indicator">
+                              {isDone ? '■' : isActive ? '▶' : '○'}
+                            </span>
+                            <span className="ps-label">{step.label}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {/* Active step description */}
+                    {currentStep > 0 && currentStep <= STEPS.length && (
+                      <motion.div
+                        className="active-step-info"
+                        key={currentStep}
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.3 }}
+                      >
+                        <span className="active-step-tag">{STEPS[currentStep - 1].sublabel}</span>
+                        <span className="active-step-desc">{STEPS[currentStep - 1].description}</span>
+                      </motion.div>
+                    )}
+                  </>
                 )}
 
                 {/* Log viewer */}

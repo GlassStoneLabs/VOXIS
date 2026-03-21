@@ -13,10 +13,10 @@
 import os
 # Must be set before any torch import
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
-import gc
 import torch
 from .device_utils import DeviceOptimizer
 from .path_utils import get_engine_base_dir
+from .coreml_bridge import CoreMLBridge, CoreMLModule, coreml_viable
 
 # Try to import AudioSR safely
 try:
@@ -50,6 +50,11 @@ class TrinityUpscaler:
         self.audiosr_model = None
         self._initialized = False
 
+        # CoreML acceleration state
+        self._coreml_bridge    = CoreMLBridge() if coreml_viable() else None
+        self._coreml_denoiser  = None   # AudioSR UNet → CoreML
+        self._coreml_active    = False
+
         # Resolve paths
         base_dir = get_engine_base_dir()
         self.cache_dir = os.path.join(base_dir, "dependencies", "models", "huggingface")
@@ -58,7 +63,7 @@ class TrinityUpscaler:
         os.makedirs(self.temp_dir, exist_ok=True)
 
         print(f"[{self.__class__.__name__}] Device: {self.device_str.upper()}")
-        print(f"[{self.__class__.__name__}] AudioSR: {'available' if AUDIOSR_AVAILABLE else 'NOT FOUND (using resample fallback)'}")
+        print(f"[{self.__class__.__name__}] GS-ASCEND: {'available' if AUDIOSR_AVAILABLE else 'NOT FOUND (using resample fallback)'}")
         print(f"[{self.__class__.__name__}] Quality: {quality} ({self.ddim_steps} DDIM steps)")
 
         if AUDIOSR_AVAILABLE:
@@ -71,15 +76,109 @@ class TrinityUpscaler:
             os.environ["HUGGINGFACE_HUB_CACHE"] = self.cache_dir
             os.environ["AUDIOSR_CACHE_DIR"] = self.cache_dir
 
-            print(f"[{self.__class__.__name__}] Loading AudioSR model (will download on first run)...")
+            print(f"[{self.__class__.__name__}] Loading GS-ASCEND model (will download on first run)...")
             self.audiosr_model = build_model(model_name="basic", device=self.device_str)
             self._initialized = True
-            print(f"[{self.__class__.__name__}] ✓ AudioSR model loaded on {self.device_str}")
+            print(f"[{self.__class__.__name__}] ✓ GS-ASCEND model loaded on {self.device_str}")
+
+            # Attempt CoreML acceleration of the AudioSR denoiser (UNet)
+            if coreml_viable():
+                self._try_coreml_acceleration()
 
         except Exception as e:
             print(f"[{self.__class__.__name__}] AudioSR init failed: {e}")
             print(f"[{self.__class__.__name__}] Will use torchaudio resample fallback.")
             self._initialized = False
+
+    def _try_coreml_acceleration(self):
+        """
+        Attempt to convert AudioSR's internal UNet denoiser to CoreML.
+
+        AudioSR model hierarchy (duck-typed — structure varies by version):
+          audiosr_model           → dict or object returned by build_model()
+          audiosr_model['model']  → LatentDiffusion
+          .model                  → UNet denoiser (the hot loop)
+
+        On success: the UNet's __call__ is replaced with a CoreMLModule
+        wrapper so each DDIM step runs on the Neural Engine.
+        """
+        bridge = self._coreml_bridge
+        if bridge is None:
+            return
+
+        print(f"[{self.__class__.__name__}] Attempting GS-ASCEND CoreML denoiser conversion...")
+
+        try:
+            # Resolve the UNet — AudioSR can store model in a dict or as attrs
+            ldm = None
+            if isinstance(self.audiosr_model, dict):
+                ldm = self.audiosr_model.get("model")
+            elif hasattr(self.audiosr_model, "model"):
+                ldm = self.audiosr_model.model
+
+            unet = None
+            if ldm is not None:
+                # Try common attribute names for the denoising network
+                for attr in ("model", "diffusion_model", "unet", "denoiser"):
+                    candidate = getattr(ldm, attr, None)
+                    if candidate is not None and isinstance(candidate, torch.nn.Module):
+                        unet = candidate
+                        break
+
+            if unet is None:
+                print(f"[{self.__class__.__name__}] Could not locate UNet — "
+                      "GS-ASCEND CoreML skipped (PyTorch path active)")
+                return
+
+            # Probe the UNet's expected input shapes with a dummy forward pass
+            # AudioSR UNet typically: x=(B,C,T), t=(B,), context=(B,S,D)
+            # We use small safe defaults and let trace figure out the shapes
+            unet.eval()
+            # Try to infer channel count from first conv layer
+            c_in = 8
+            for module in unet.modules():
+                if isinstance(module, torch.nn.Conv1d):
+                    c_in = module.in_channels
+                    break
+                if isinstance(module, torch.nn.Conv2d):
+                    c_in = module.in_channels
+                    break
+
+            dummy_x   = torch.zeros(1, c_in, 256).cpu()
+            dummy_t   = torch.zeros(1).long().cpu()
+
+            coreml_unet = bridge.convert(
+                unet,
+                sample_inputs=(dummy_x, dummy_t),
+                model_name=f"gs_ascend_unet_cin{c_in}",
+                input_names=["noisy_latent", "timestep"],
+                output_names=["denoised_latent"],
+                dynamic_axes={"noisy_latent": [2]},   # time dimension is dynamic
+            )
+
+            if coreml_unet:
+                wrapped_unet = CoreMLModule(
+                    original=unet,
+                    coreml=coreml_unet,
+                    input_name="noisy_latent",
+                    output_name="denoised_latent",
+                    bridge=bridge,
+                )
+                # Patch UNet back into AudioSR's model hierarchy
+                if ldm is not None:
+                    for attr in ("model", "diffusion_model", "unet", "denoiser"):
+                        if hasattr(ldm, attr) and isinstance(getattr(ldm, attr), torch.nn.Module):
+                            setattr(ldm, attr, wrapped_unet)
+                            break
+                self._coreml_denoiser = coreml_unet
+                self._coreml_active   = True
+                print(f"[{self.__class__.__name__}] ✓ GS-ASCEND denoiser on Neural Engine (CoreML)")
+            else:
+                print(f"[{self.__class__.__name__}] UNet CoreML conversion unavailable — "
+                      "running standard DDIM sampling")
+
+        except Exception as e:
+            print(f"[{self.__class__.__name__}] GS-ASCEND CoreML skipped: {e}")
 
     def super_resolve(self, input_audio_path: str, target_sr: int = 48000) -> str:
         """
@@ -125,7 +224,7 @@ class TrinityUpscaler:
                       f"skipping AudioSR diffusion (Wn guard).")
                 return None
 
-            print(f"[{self.__class__.__name__}] Running AudioSR diffusion ({self.ddim_steps} DDIM steps)...")
+            print(f"[{self.__class__.__name__}] Running GS-ASCEND diffusion ({self.ddim_steps} DDIM steps)...")
 
             with torch.no_grad():
                 waveform = super_resolution(
@@ -189,11 +288,7 @@ class TrinityUpscaler:
             return None
 
         finally:
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            elif hasattr(torch, 'mps') and hasattr(torch.mps, 'empty_cache'):
-                torch.mps.empty_cache()
+            DeviceOptimizer.cleanup_memory()
 
     def _resample_fallback(self, input_path: str, out_path: str, target_sr: int) -> str:
         """

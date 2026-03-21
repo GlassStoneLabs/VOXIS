@@ -35,7 +35,7 @@ class RetryEngine:
                         return result
                     except Exception as e:
                         last_exception = e
-                        backoff = 2 ** (attempt - 1)  # 1s, 2s, 4s
+                        backoff = 0.5 * (2 ** (attempt - 1))  # 0.5s, 1s, 2s
                         print(f"[RetryEngine] ⚠ {stage_name} failed (attempt {attempt}/{retries}): {e}")
                         traceback.print_exc()
                         

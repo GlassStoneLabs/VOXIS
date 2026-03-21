@@ -1,0 +1,22 @@
+{
+  "name": "voxis-license-server",
+  "version": "1.0.0",
+  "description": "VOXIS License Activation & Validation Server — Glass Stone LLC",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "generate-key": "node generate-key.js",
+    "list-licenses": "node generate-key.js --list"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.3.1",
+    "jsonwebtoken": "^9.0.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

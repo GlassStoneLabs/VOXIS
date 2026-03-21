@@ -137,14 +137,16 @@ ipcMain.handle(
   (
     _event,
     params: {
-      filePath:     string;
-      mode:         string;
-      stereoWidth:  number;
-      outputFormat: string;
-      ramLimit?:    number;
+      filePath:        string;
+      mode:            string;
+      stereoWidth:     number;
+      outputFormat:    string;
+      ramLimit?:       number;
+      denoiseStrength?: number;  // 0.0–1.0 (cfg_strength)
+      denoiseSteps?:   number;   // 8–64 (diffusion steps)
     },
   ): Promise<string> => {
-    const { filePath, mode, stereoWidth, outputFormat, ramLimit } = params;
+    const { filePath, mode, stereoWidth, outputFormat, ramLimit, denoiseStrength, denoiseSteps } = params;
 
     // --- Validate inputs ---
     if (!filePath || typeof filePath !== 'string') {
@@ -156,6 +158,8 @@ ipcMain.handle(
     const safeFormat    = validFormats.includes(outputFormat) ? outputFormat : 'WAV';
     const safeWidth     = Math.max(0, Math.min(1, stereoWidth ?? 0.5));
     const safeRamLimit  = Math.max(25, Math.min(100, ramLimit ?? 75));
+    const safeCfg       = Math.max(0.1, Math.min(1.0, denoiseStrength ?? 0.55));
+    const safeSteps     = Math.max(8, Math.min(64, Math.round(denoiseSteps ?? 16)));
 
     // --- Guard: reject if already processing ---
     if (activeProcess) {
@@ -195,14 +199,15 @@ ipcMain.handle(
     }
 
     const args: string[] = [
-      '--input',        filePath,
-      '--output',       engineOutPath,
-      '--stereo-width', safeWidth.toFixed(2),
-      '--format',       engineFormat,
+      '--input',          filePath,
+      '--output',         engineOutPath,
+      '--stereo-width',   safeWidth.toFixed(2),
+      '--format',         engineFormat,
+      '--ram-limit',      String(safeRamLimit),
+      '--denoise-steps',  String(safeSteps),
+      '--denoise-strength', safeCfg.toFixed(2),
     ];
     if (safeMode === 'EXTREME') args.push('--extreme');
-    // --ram-limit only supported in rebuilt binaries; skip for frozen v8.1
-    // args.push('--ram-limit', String(safeRamLimit));
 
     send('trinity-log', '>> [VOXIS] Trinity V8.1 Engine starting...');
 
@@ -210,10 +215,16 @@ ipcMain.handle(
       let child: ChildProcess;
 
       try {
+        // Ensure FFmpeg is discoverable — Electron strips Homebrew/MacPorts from PATH
+        const extraPaths = ['/opt/homebrew/bin', '/usr/local/bin', '/opt/local/bin'];
+        const currentPath = process.env.PATH || '/usr/bin:/bin';
+        const fullPath = [...extraPaths, ...currentPath.split(':')].filter((v, i, a) => a.indexOf(v) === i).join(':');
+
         child = spawn(binaryPath, args, {
           stdio: ['ignore', 'pipe', 'pipe'],
           env:   {
             ...process.env,
+            PATH:                        fullPath,
             PYTORCH_ENABLE_MPS_FALLBACK: '1',
             PYTHONUNBUFFERED:            '1',   // force line-flush when piped (fixes silent log)
             PYTHONFAULTHANDLER:          '1',   // crash tracebacks visible in stderr
@@ -441,4 +452,30 @@ app.on('window-all-closed', () => {
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
+});
+
+// ---------------------------------------------------------------------------
+// License IPC handlers
+// ---------------------------------------------------------------------------
+import {
+  activateLicense,
+  validateLicense,
+  deactivateLicense,
+  getMachineFingerprint,
+} from './license';
+
+ipcMain.handle('license:activate', async (_event, key: string, email: string) => {
+  return activateLicense(key, email);
+});
+
+ipcMain.handle('license:validate', async () => {
+  return validateLicense();
+});
+
+ipcMain.handle('license:deactivate', async () => {
+  return deactivateLicense();
+});
+
+ipcMain.handle('license:fingerprint', () => {
+  return getMachineFingerprint();
 });

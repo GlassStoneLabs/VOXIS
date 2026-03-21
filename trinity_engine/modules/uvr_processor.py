@@ -2,7 +2,7 @@
 # Copyright © 2026 Glass Stone LLC. All Rights Reserved.
 # CEO: Gabriel B. Rodriguez
 #
-# Production BS-RoFormer vocal isolation via audio-separator.
+# GS-PRISM: Glass Stone Voice Isolation Model via audio-separator.
 # Features:
 #   - Cross-platform device selection (CUDA → MPS → CPU)
 #   - Memory-aware batch sizing
@@ -18,6 +18,7 @@ import torch
 import warnings
 from .device_utils import DeviceOptimizer
 from .path_utils import get_engine_base_dir
+from .coreml_bridge import coreml_viable, IS_APPLE_SILICON
 
 # Suppress noisy warnings from audio-separator internals
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -51,6 +52,10 @@ class GlassStoneSeparator:
         self.separator = None
         self.model_loaded = False
 
+        # On Apple Silicon, prefer CoreML-accelerated ONNX runtime for MDX/VR fallback models.
+        # BS-RoFormer (primary) uses PyTorch directly — device_str routes it to MPS.
+        self._ort_providers = self._resolve_ort_providers()
+
         # Resolve paths relative to this script or Tauri resources
         base_dir = get_engine_base_dir()
         self.model_dir = os.path.join(base_dir, "dependencies", "models", "audio_separator")
@@ -68,6 +73,23 @@ class GlassStoneSeparator:
 
         # Initialize separator
         self._init_separator(PRIMARY_MODEL)
+
+    @staticmethod
+    def _resolve_ort_providers() -> list:
+        """
+        Return the best available ONNX Runtime execution providers.
+        Priority: CoreMLExecutionProvider → CPUExecutionProvider.
+        Used by audio-separator for MDX/VR model ONNX inference.
+        """
+        try:
+            import onnxruntime as ort
+            available = ort.get_available_providers()
+            if IS_APPLE_SILICON and "CoreMLExecutionProvider" in available:
+                print("[GS-PRISM] ONNX Runtime: CoreML execution provider active")
+                return ["CoreMLExecutionProvider", "CPUExecutionProvider"]
+            return ["CPUExecutionProvider"]
+        except ImportError:
+            return ["CPUExecutionProvider"]
 
     def _init_separator(self, model_name: str):
         """Initialize the audio-separator with the specified model."""
@@ -89,11 +111,16 @@ class GlassStoneSeparator:
                     return dist
                 Separator.get_package_distribution = _safe_get_dist
 
-            self.separator = Separator(
+            sep_kwargs = dict(
                 log_level=logging.WARNING,
                 model_file_dir=self.model_dir,
                 output_dir=self.temp_dir,
             )
+            # Inject CoreML ONNX providers if available
+            if self._ort_providers and "CoreMLExecutionProvider" in self._ort_providers:
+                sep_kwargs["onnx_execution_providers"] = self._ort_providers
+
+            self.separator = Separator(**sep_kwargs)
 
             # audio-separator 0.41.1+: custom models (e.g. BS-RoFormer) are NOT in
             # the package's built-in registry. load_model_data_from_yaml() must be

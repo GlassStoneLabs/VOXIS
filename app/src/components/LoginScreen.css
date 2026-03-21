@@ -1,0 +1,305 @@
+/* VOXIS 4.0 DENSE — License Activation Screen
+   Bauhaus geometric styling to match main app design system. */
+
+/* ── Shell ──────────────────────────────────────────────────────────────── */
+.ls-shell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  width: 100vw;
+  background: #EDE8D0;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ── Background geometric shapes ────────────────────────────────────────── */
+.ls-bg-shape {
+  position: absolute;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.ls-bg-rect {
+  width: 220px;
+  height: 140px;
+  background: #C9382D;
+  opacity: 0.08;
+  top: 10%;
+  left: -40px;
+  border: 3px solid #1A1A1A;
+  transform: rotate(-8deg);
+}
+
+.ls-bg-circle {
+  width: 300px;
+  height: 300px;
+  border-radius: 50%;
+  background: #2B5EA0;
+  opacity: 0.06;
+  bottom: -80px;
+  right: -60px;
+  border: 3px solid #1A1A1A;
+}
+
+.ls-bg-tri {
+  width: 0;
+  height: 0;
+  border-left: 90px solid transparent;
+  border-right: 90px solid transparent;
+  border-bottom: 160px solid #F5B731;
+  opacity: 0.12;
+  top: 60%;
+  left: 5%;
+}
+
+/* ── Card ───────────────────────────────────────────────────────────────── */
+.ls-card {
+  position: relative;
+  z-index: 1;
+  background: #FFFFFF;
+  border: 3px solid #1A1A1A;
+  box-shadow: 8px 8px 0 #1A1A1A;
+  padding: 2.5rem 2.5rem 2rem;
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+.ls-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.ls-logo {
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+}
+
+.ls-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.ls-brand-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+
+.ls-brand-voxis {
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 1.6rem;
+  font-weight: 900;
+  letter-spacing: 3px;
+  color: #1A1A1A;
+  line-height: 1;
+}
+
+.ls-brand-dense {
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 1rem;
+  font-weight: 900;
+  letter-spacing: 3px;
+  color: #F5B731;
+  line-height: 1;
+}
+
+.ls-brand-sub {
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 0.52rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #888070;
+}
+
+/* ── Divider ─────────────────────────────────────────────────────────────── */
+.ls-divider {
+  height: 3px;
+  background: #1A1A1A;
+  margin-bottom: 1.4rem;
+}
+
+/* ── Title ───────────────────────────────────────────────────────────────── */
+.ls-title {
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 1.1rem;
+  font-weight: 900;
+  letter-spacing: 3px;
+  color: #1A1A1A;
+  margin-bottom: 0.3rem;
+}
+
+.ls-subtitle {
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 0.65rem;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  color: #888070;
+  margin-bottom: 1.4rem;
+}
+
+/* ── Field ───────────────────────────────────────────────────────────────── */
+.ls-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+
+.ls-field-err .ls-input {
+  border-color: #C9382D;
+  background: #FEF2F2;
+}
+
+.ls-label {
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #1A1A1A;
+}
+
+.ls-input {
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #1A1A1A;
+  background: #F5F5F0;
+  border: 2px solid #1A1A1A;
+  padding: 0.6rem 0.75rem;
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+  -webkit-app-region: no-drag;
+}
+
+.ls-input:focus {
+  background: #FFFFFF;
+  border-color: #2B5EA0;
+}
+
+.ls-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ls-input-mono {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+  font-size: 1rem;
+  letter-spacing: 2px;
+}
+
+/* ── Error ───────────────────────────────────────────────────────────────── */
+.ls-error {
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #C9382D;
+  background: #FEF2F2;
+  border: 2px solid #C9382D;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 1rem;
+  overflow: hidden;
+}
+
+/* ── Activate button ─────────────────────────────────────────────────────── */
+.ls-btn-activate {
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: #FFFFFF;
+  background: #C9382D;
+  border: 2px solid #1A1A1A;
+  padding: 0.75rem 1.5rem;
+  cursor: pointer;
+  box-shadow: 4px 4px 0 #1A1A1A;
+  transition: box-shadow 0.1s;
+  width: 100%;
+  margin-bottom: 1.4rem;
+  -webkit-app-region: no-drag;
+}
+
+.ls-btn-activate:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: 2px 2px 0 #1A1A1A;
+}
+
+.ls-btn-activate:active:not(:disabled) {
+  box-shadow: 1px 1px 0 #1A1A1A;
+}
+
+/* ── Info chips ──────────────────────────────────────────────────────────── */
+.ls-info-grid {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.2rem;
+}
+
+.ls-info-chip {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  background: #EDE8D0;
+  border: 2px solid #D8D3BE;
+  padding: 0.45rem 0.5rem;
+}
+
+.ls-info-label {
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 0.44rem;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: #888070;
+}
+
+.ls-info-val {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #1A1A1A;
+}
+
+/* ── Purchase link ───────────────────────────────────────────────────────── */
+.ls-purchase {
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 0.6rem;
+  color: #888070;
+  text-align: center;
+  letter-spacing: 0.3px;
+}
+
+.ls-purchase-link {
+  color: #2B5EA0;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ls-purchase-link:hover { color: #1A1A1A; }
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .ls-card {
+    margin: 1rem;
+    padding: 1.8rem 1.5rem 1.5rem;
+  }
+  .ls-brand-voxis { font-size: 1.3rem; }
+  .ls-info-grid   { flex-direction: column; }
+}

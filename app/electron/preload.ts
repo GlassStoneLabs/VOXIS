@@ -14,11 +14,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   trinity: {
     runEngine: (params: {
-      filePath: string;
-      mode: string;
-      stereoWidth: number;
-      outputFormat: string;
-      ramLimit?: number;
+      filePath:        string;
+      mode:            string;
+      stereoWidth:     number;
+      outputFormat:    string;
+      ramLimit?:       number;
+      denoiseStrength?: number;
+      denoiseSteps?:   number;
     }): Promise<string> =>
       ipcRenderer.invoke('trinity:runEngine', params),
 
@@ -70,5 +72,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     download: (): Promise<void> => ipcRenderer.invoke('update:download'),
     install:  (): void => { ipcRenderer.invoke('update:install'); },
+  },
+
+  license: {
+    activate: (key: string, email: string): Promise<{
+      success: boolean; message: string; tier?: string; email?: string;
+    }> => ipcRenderer.invoke('license:activate', key, email),
+
+    validate: (): Promise<{
+      valid: boolean; tier?: string; email?: string;
+      expiry?: string | null; reason?: string; offline?: boolean;
+    }> => ipcRenderer.invoke('license:validate'),
+
+    deactivate: (): Promise<void> =>
+      ipcRenderer.invoke('license:deactivate'),
+
+    getFingerprint: (): Promise<string> =>
+      ipcRenderer.invoke('license:fingerprint'),
   },
 });

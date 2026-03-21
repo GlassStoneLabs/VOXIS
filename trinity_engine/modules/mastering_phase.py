@@ -32,10 +32,12 @@ class PedalboardMastering:
     Stage 6: Final mastering using Pedalboard DSP chain.
     Applies Harman target curve EQ, stereo width, gain staging, and limiting.
 
-    Harman Target Curve Reference:
+    Harman Target Curve Reference (vocal-tuned):
         Sean Olive et al., Harman International (2013-2018)
-        - Bass shelf: +4 dB @ 105 Hz (Q=0.7)
-        - Presence:   +1.5 dB @ 3 kHz (Q=1.0)
+        - Bass shelf: +2 dB @ 105 Hz (Q=0.7) — reduced from +4dB to prevent masking
+        - Warmth:     +1 dB @ 1.5 kHz (Q=0.8) — vocal body
+        - Presence:   +2.5 dB @ 3 kHz (Q=1.0) — vocal clarity/intelligibility
+        - De-harsh:   -1.5 dB @ 6.5 kHz (Q=1.5) — tame sibilance
         - Treble:     -1.5 dB shelf @ 10 kHz (Q=0.7)
     """
 
@@ -49,7 +51,7 @@ class PedalboardMastering:
             print(f"[{self.__class__.__name__}] Install with: pip install pedalboard")
 
     def apply(self, input_audio_path: str, width: float = 0.50,
-              gain_db: float = 2.0, limiter_threshold_db: float = -0.3,
+              gain_db: float = 1.0, limiter_threshold_db: float = -0.5,
               lowpass_hz: float = 20000.0, highpass_hz: float = 20.0,
               vocal_presence_db: float = 0.0) -> str:
         """
@@ -150,11 +152,12 @@ class PedalboardMastering:
         Build the Harman target curve EQ chain, blended with
         spectral-adaptive Auto-EQ from the noise profiler.
 
-        Harman curve (Sean Olive et al., 2013-2018):
-          - Bass shelf:  +4 dB @ 105 Hz, Q=0.7
+        Harman curve vocal-tuned (Sean Olive et al., 2013-2018):
+          - Bass shelf:  +2 dB @ 105 Hz, Q=0.7 (reduced from +4dB)
           - Mud cleanup: -1.5 dB @ 250 Hz, Q=0.8
-          - Presence:    +1.5 dB @ 3 kHz, Q=1.0
-          - De-harsh:    -0.5 dB @ 6.5 kHz, Q=1.5
+          - Warmth:      +1 dB @ 1.5 kHz, Q=0.8
+          - Presence:    +2.5 dB @ 3 kHz, Q=1.0 (boosted from +1.5dB)
+          - De-harsh:    -1.5 dB @ 6.5 kHz, Q=1.5 (increased from -0.5dB)
           - Treble shelf: -1.5 dB @ 10 kHz, Q=0.7
           - Air rolloff:  LPF @ 18 kHz
         """
@@ -164,10 +167,10 @@ class PedalboardMastering:
         hpf = max(25.0, float(highpass_hz))
         effects.append(HighpassFilter(cutoff_frequency_hz=hpf))
 
-        # ── Harman bass shelf: +4 dB @ 105 Hz ───────────────────
+        # ── Bass shelf: +2 dB @ 105 Hz (reduced to prevent masking vocals) ──
         effects.append(LowShelfFilter(
             cutoff_frequency_hz=105.0,
-            gain_db=4.0,
+            gain_db=2.0,
             q=0.7,
         ))
 
@@ -178,19 +181,26 @@ class PedalboardMastering:
             q=0.8,
         ))
 
-        # ── Presence / clarity: +1.5 dB @ 3 kHz ────────────────
+        # ── Vocal warmth: +1 dB @ 1.5 kHz ───────────────────────
+        effects.append(PeakFilter(
+            cutoff_frequency_hz=1500.0,
+            gain_db=1.0,
+            q=0.8,
+        ))
+
+        # ── Presence / clarity: +2.5 dB @ 3 kHz ────────────────
         # Blend with Auto-EQ vocal presence
-        presence = 1.5 + float(vocal_presence_db) * 0.5
+        presence = 2.5 + float(vocal_presence_db) * 0.5
         effects.append(PeakFilter(
             cutoff_frequency_hz=3000.0,
             gain_db=presence,
             q=1.0,
         ))
 
-        # ── Harshness taming: -0.5 dB @ 6.5 kHz ─────────────────
+        # ── Harshness taming: -1.5 dB @ 6.5 kHz ─────────────────
         effects.append(PeakFilter(
             cutoff_frequency_hz=6500.0,
-            gain_db=-0.5,
+            gain_db=-1.5,
             q=1.5,
         ))
 
@@ -205,10 +215,10 @@ class PedalboardMastering:
         lpf = min(18000.0, float(lowpass_hz))
         effects.append(LowpassFilter(cutoff_frequency_hz=lpf))
 
-        print(f"[{self.__class__.__name__}] Harman EQ: "
-              f"HPF={hpf:.0f}Hz | Bass=+4dB@105Hz | "
-              f"Presence={presence:+.1f}dB@3kHz | "
-              f"Treble=-1.5dB@10kHz | LPF={lpf:.0f}Hz")
+        print(f"[{self.__class__.__name__}] Harman EQ (vocal): "
+              f"HPF={hpf:.0f}Hz | Bass=+2dB@105Hz | "
+              f"Warmth=+1dB@1.5kHz | Presence={presence:+.1f}dB@3kHz | "
+              f"DeHarsh=-1.5dB@6.5kHz | LPF={lpf:.0f}Hz")
 
         return effects
 
