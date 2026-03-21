@@ -1,4 +1,4 @@
-# VOXIS V4.0.0 DENSE — TRINITY V8.1 ENGINE (DESKTOP)
+# VOXIS V4.0.0 DENSE — TRINITY V8.2 ENGINE (DESKTOP)
 # Copyright © 2026 Glass Stone LLC. All Rights Reserved.
 # CEO: Gabriel B. Rodriguez
 # Timestamp: 2026-03-15
@@ -49,13 +49,13 @@ from modules.adaptive_chunker import AdaptiveChunker
 
 class TrinityV8Desktop:
     """
-    Trinity V8.1 pipeline with lazy model loading.
+    Trinity V8.2 pipeline with lazy model loading.
     __init__ completes in ~2s. ML models load on first use.
     """
 
     def __init__(self):
         t0 = time.perf_counter()
-        print(">> [SYSTEM] INITIALIZING TRINITY V8.1 DESKTOP ENGINE...")
+        print(">> [SYSTEM] INITIALIZING TRINITY V8.2 DESKTOP ENGINE...")
         print(f">> [SYSTEM] Platform: {platform.system()} {platform.machine()}")
         print(">> [SYSTEM] Copyright © 2026 Glass Stone LLC — CEO: Gabriel B. Rodriguez")
 
@@ -123,6 +123,56 @@ class TrinityV8Desktop:
             from modules.mastering_phase import PedalboardMastering
             self._limiter = PedalboardMastering()
         return self._limiter
+
+    # ── Chunked pipeline (stages 2–6 per chunk) ─────────────────────────
+
+    def _run_stages_2_to_6(self, chunk_wav, params, job_key, auto_eq=None, ci=0, total=1):
+        """
+        Run pipeline stages 2-6 on a single chunk.
+        Called by run_pipeline() when AdaptiveChunker splits a long file.
+        Returns path to the mastered WAV for this chunk.
+        """
+        tag = f"chunk{ci}"
+
+        # ── 2/6 SEPARATE ──
+        gc.collect()
+        print(f">> [{ci+1}/{total}] [2/6] GS-PRISM Voice Isolation...")
+        vocal_wav = self._stage_separate(chunk_wav)
+
+        # ── 3/6 ANALYZE ──
+        print(f">> [{ci+1}/{total}] [3/6] Spectrum Analysis...")
+        from modules.spectrum_analyzer import NoiseProfiler
+        noise_profile = self.profiler.analyze(vocal_wav)
+        try:
+            auto_eq = NoiseProfiler.compute_auto_eq(noise_profile)
+        except Exception:
+            auto_eq = {'lowpass_hz': 20000.0, 'highpass_hz': 20.0, 'vocal_presence_db': 0.0}
+
+        # ── 4/6 DENOISE ──
+        gc.collect()
+        print(f">> [{ci+1}/{total}] [4/6] GS-CRYSTAL Pre-Diffusion...")
+        enhanced_wav_1 = self._stage_denoise(vocal_wav, stage="pre-diffusion")
+
+        # ── 5/6 UPSCALE ──
+        gc.collect()
+        print(f">> [{ci+1}/{total}] [5/6] GS-ASCEND Upscale...")
+        post_denoised = self._stage_denoise(enhanced_wav_1, stage="post-diffusion")
+        enhanced_wav_2 = self._stage_upscale(post_denoised, target_sr=48000)
+
+        # ── 6/6 MASTER ──
+        gc.collect()
+        width = float(params.get('stereo_width', 0.50))
+        print(f">> [{ci+1}/{total}] [6/6] Mastering & Auto-EQ...")
+        mastered_wav = self._stage_master(
+            enhanced_wav_2,
+            width=width,
+            lowpass_hz=auto_eq.get('lowpass_hz', 20000.0),
+            highpass_hz=auto_eq.get('highpass_hz', 20.0),
+            vocal_presence_db=auto_eq.get('vocal_presence_db', 0.0),
+        )
+
+        print(f">> [{ci+1}/{total}] ✓ Chunk complete → {os.path.basename(mastered_wav)}")
+        return mastered_wav
 
     # ── Retry-wrapped stage methods ─────────────────────────────────────
 
@@ -357,7 +407,7 @@ class TrinityV8Desktop:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="VOXIS V4.0.0 DENSE — Trinity V8.1 Backend | Glass Stone LLC © 2026"
+        description="VOXIS V4.0.0 DENSE — Trinity V8.2 Backend | Glass Stone LLC © 2026"
     )
     parser.add_argument("--input",        required=True,  help="Input audio/video file path")
     parser.add_argument("--output",       required=True,  help="Output file path")

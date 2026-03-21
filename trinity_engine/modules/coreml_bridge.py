@@ -120,12 +120,18 @@ class CoreMLBridge:
                         shape[dim_idx] = ct.RangeDim(minimum=1, maximum=65536)
                 ct_inputs.append(ct.TensorType(name=name, shape=shape, dtype=float))
 
+            # macOS 14+ unlocks newer ANE ops (e.g. grouped conv, attention);
+            # fall back to macOS 13 if the host is older.
+            import platform
+            ver = tuple(int(x) for x in platform.mac_ver()[0].split(".")[:2]) if platform.system() == "Darwin" else (0, 0)
+            deploy_target = ct.target.macOS14 if ver >= (14, 0) else ct.target.macOS13
+
             mlmodel = ct.convert(
                 traced,
                 inputs=ct_inputs,
                 convert_to="mlprogram",
                 compute_precision=ct.precision.FLOAT16,
-                minimum_deployment_target=ct.target.macOS13,
+                minimum_deployment_target=deploy_target,
             )
 
             mlmodel.short_description = f"Glass Stone Labs — {model_name}"
@@ -140,16 +146,36 @@ class CoreMLBridge:
             return None
 
     def _load_package(self, pkg_path: str) -> "ct.models.MLModel | None":
-        """Load .mlpackage with ComputeUnit.ALL (Neural Engine + GPU + CPU)."""
+        """
+        Load .mlpackage with optimal ComputeUnit for Apple Silicon.
+
+        Priority strategy:
+          1. CPU_AND_NEURAL_ENGINE — routes compute to the ANE (NPU) with CPU
+             fallback for ops the ANE doesn't support. Avoids GPU contention
+             so PyTorch can keep MPS for stages that need it.
+          2. ALL — Neural Engine + GPU + CPU (if ANE-only fails).
+          3. CPU_AND_GPU — last resort if ANE isn't compatible.
+        """
         if not COREML_AVAILABLE:
             return None
-        try:
-            model = ct.models.MLModel(pkg_path, compute_units=ct.ComputeUnit.ALL)
-            print(f"[CoreMLBridge] ✓ Loaded — ComputeUnit.ALL → Neural Engine active")
-            return model
-        except Exception as e:
-            print(f"[CoreMLBridge] Package load failed: {e}")
-            return None
+
+        # Try compute unit tiers from most to least optimal
+        compute_tiers = [
+            (ct.ComputeUnit.CPU_AND_NEURAL_ENGINE, "CPU + Neural Engine (ANE/NPU)"),
+            (ct.ComputeUnit.ALL,                   "ALL (ANE + GPU + CPU)"),
+            (ct.ComputeUnit.CPU_AND_GPU,            "CPU + GPU"),
+        ]
+        for unit, label in compute_tiers:
+            try:
+                model = ct.models.MLModel(pkg_path, compute_units=unit)
+                print(f"[CoreMLBridge] ✓ Loaded — {label}")
+                return model
+            except Exception as e:
+                print(f"[CoreMLBridge] {label} failed: {e}")
+                continue
+
+        print(f"[CoreMLBridge] All compute tiers failed for {pkg_path}")
+        return None
 
     # ── Inference ─────────────────────────────────────────────────────────────
 
