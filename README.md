@@ -1,9 +1,8 @@
 # VOXIS 4.0 DENSE
 
 **Powered by Trinity V8.1 | Built by Glass Stone LLC**
-**CEO: Gabriel B. Rodriguez |  © 2026**
-coded with help from Claude 4.6 opus , Google Gemini was used to prototype the Ui , it was mostly built by hand . 
----
+**CEO: Gabriel B. Rodriguez | © 2026**
+The code was assisted by Claude 4.6 opus, and Google Gemini was used to prototype the UI. The majority of the development was done manually.
 
 ## Overview
 
