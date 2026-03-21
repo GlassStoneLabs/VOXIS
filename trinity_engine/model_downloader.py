@@ -134,8 +134,8 @@ def run():
         print("[Downloader] Models already installed. Skipping download.")
         return True
 
-    print("\n[Downloader] First-run detected — ML model weights not found.")
-    print("[Downloader] Downloading Trinity V8.1 model pack...\n")
+    print("\n[Downloader] First-run detected — GS model weights not found.")
+    print("[Downloader] Downloading Trinity V8.1 model pack (GS-PRISM, GS-CRYSTAL, GS-ASCEND)...\n")
 
     zip_path = os.path.join(DOWNLOAD_DIR, "trinity_models_v8.1.zip")
 

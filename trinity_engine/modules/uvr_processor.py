@@ -35,7 +35,7 @@ except ImportError:
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
-# Primary model: BS-RoFormer (highest quality vocal isolation)
+# Primary model: GS-PRISM (BS-RoFormer backbone — highest quality vocal isolation)
 PRIMARY_MODEL = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
 # Fallback model: MDX23C (faster, smaller, still good quality)
 FALLBACK_MODEL = "MDX23C-8KFFT-InstVoc_HQ.ckpt"
@@ -43,7 +43,7 @@ FALLBACK_MODEL = "MDX23C-8KFFT-InstVoc_HQ.ckpt"
 
 class GlassStoneSeparator:
     """
-    Stage 2: Source Separation using BS-RoFormer via audio-separator.
+    Stage 2: GS-PRISM Voice Isolation via audio-separator.
     Isolates vocals from instruments for targeted restoration.
     """
 
@@ -54,7 +54,7 @@ class GlassStoneSeparator:
         self.model_loaded = False
 
         # On Apple Silicon, prefer CoreML-accelerated ONNX runtime for MDX/VR fallback models.
-        # BS-RoFormer (primary) uses PyTorch directly — device_str routes it to MPS.
+        # GS-PRISM primary (BS-RoFormer) uses PyTorch directly — device_str routes it to MPS.
         self._ort_providers = self._resolve_ort_providers()
 
         # Resolve paths relative to this script or Tauri resources
@@ -138,7 +138,7 @@ class GlassStoneSeparator:
 
             self.separator = Separator(**sep_kwargs)
 
-            # audio-separator 0.41.1+: custom models (e.g. BS-RoFormer) are NOT in
+            # audio-separator 0.41.1+: custom models (e.g. GS-PRISM/BS-RoFormer) are NOT in
             # the package's built-in registry. load_model_data_from_yaml() must be
             # called first to inject the model metadata before load_model().
             model_stem = os.path.splitext(model_name)[0]

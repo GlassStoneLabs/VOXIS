@@ -33,38 +33,38 @@ def setup():
         print("        Download the models package first.")
         sys.exit(1)
 
-    # ── 1. BS-RoFormer (audio-separator) ─────────────────────────────────
+    # ── 1. GS-PRISM (Voice Isolation — BS-RoFormer backbone) ──────────────
     src = os.path.join(DISTRO_DIR, "audio_separator")
     dst = os.path.join(DEPS_DIR, "audio_separator")
     if os.path.isdir(src):
-        _install(src, dst, "BS-RoFormer")
+        _install(src, dst, "GS-PRISM")
     else:
         print("[SKIP] audio_separator not in distro/")
 
-    # ── 2. DeepFilterNet3 ────────────────────────────────────────────────
+    # ── 2. GS-FORGE (Neural Noise Reduction — DeepFilterNet3 backbone) ───
     src = os.path.join(DISTRO_DIR, "deepfilternet")
     if platform.system() == "Darwin":
         dst = os.path.expanduser("~/Library/Caches/DeepFilterNet")
     else:
         dst = os.path.expanduser("~/.cache/DeepFilterNet")
     if os.path.isdir(src):
-        _install(src, dst, "DeepFilterNet3")
+        _install(src, dst, "GS-FORGE")
     else:
         print("[SKIP] deepfilternet not in distro/")
 
-    # ── 3. VoiceRestore ──────────────────────────────────────────────────
+    # ── 3. GS-CRYSTAL (Neural Restoration — VoiceRestore backbone) ───────
     src = os.path.join(DISTRO_DIR, "voicerestore")
     dst = os.path.join(DEPS_DIR, "voicerestore")
     if os.path.isdir(src):
-        _install(src, dst, "VoiceRestore")
+        _install(src, dst, "GS-CRYSTAL")
     else:
         print("[SKIP] voicerestore not in distro/")
 
-    # ── 4. AudioSR ──────────────────────────────────────────────────────
+    # ── 4. GS-ASCEND (Audio Super-Resolution — AudioSR backbone) ─────────
     src = os.path.join(DISTRO_DIR, "audiosr")
     dst = os.path.join(DEPS_DIR, "huggingface")
     if os.path.isdir(src):
-        _install(src, dst, "AudioSR")
+        _install(src, dst, "GS-ASCEND")
     else:
         print("[SKIP] audiosr not in distro/")
 
@@ -78,13 +78,13 @@ def check():
     all_ok = True
 
     checks = [
-        ("BS-RoFormer", os.path.join(DEPS_DIR, "audio_separator")),
-        ("DeepFilterNet3",
+        ("GS-PRISM", os.path.join(DEPS_DIR, "audio_separator")),
+        ("GS-FORGE",
          os.path.expanduser("~/Library/Caches/DeepFilterNet")
          if platform.system() == "Darwin"
          else os.path.expanduser("~/.cache/DeepFilterNet")),
-        ("VoiceRestore", os.path.join(DEPS_DIR, "voicerestore")),
-        ("AudioSR", os.path.join(DEPS_DIR, "huggingface")),
+        ("GS-CRYSTAL", os.path.join(DEPS_DIR, "voicerestore")),
+        ("GS-ASCEND", os.path.join(DEPS_DIR, "huggingface")),
     ]
 
     for name, path in checks:

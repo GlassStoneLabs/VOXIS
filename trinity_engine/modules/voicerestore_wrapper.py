@@ -42,8 +42,8 @@ except ImportError as e:
 
 class VoiceRestoreWrapper:
     """
-    Stage 3 & 5: Universal Restoration using VoiceRestore (Transformer-Diffusion).
-    Replaces older DeepFilterNet with a unified 301M parameter flow-matching model.
+    Stage 3 & 5: GS-CRYSTAL Universal Restoration (Transformer-Diffusion).
+    Unified 301M parameter flow-matching model for neural audio restoration.
 
     On Apple Silicon (MPS): runs inference on CPU because BigVGAN uses conv layers
     with output_channels > 65536 which is a hard MPS firmware limit.
@@ -89,7 +89,7 @@ class VoiceRestoreWrapper:
     def _initialize_model(self):
         if self._initialized:
             return
-        print(f"[{self.__class__.__name__}] Initializing VoiceRestore on {self.device}...")
+        print(f"[{self.__class__.__name__}] Initializing GS-CRYSTAL on {self.device}...")
 
         try:
             # 1. Init BigVGAN vocoder on the forced inference device (CPU for MPS hosts)

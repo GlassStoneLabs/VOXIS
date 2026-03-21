@@ -2,7 +2,8 @@
 # Copyright © 2026 Glass Stone LLC. All Rights Reserved.
 # CEO: Gabriel B. Rodriguez
 #
-# AudioSR latent diffusion upsampling to 48kHz.
+# GS-ASCEND: Glass Stone Audio Super-Resolution (AudioSR latent diffusion backbone)
+# Upsamples audio to 48kHz with neural bandwidth extension.
 # Features:
 #   - Cross-platform device support (CUDA/MPS/CPU)
 #   - Configurable DDIM steps (quality vs speed tradeoff)
@@ -32,8 +33,8 @@ import torchaudio
 
 class TrinityUpscaler:
     """
-    Stage 4: Audio Super-Resolution using AudioSR latent diffusion.
-    Upsamples audio from 44.1kHz to 48kHz with bandwidth extension.
+    Stage 4: GS-ASCEND Audio Super-Resolution (AudioSR latent diffusion).
+    Upsamples audio from 44.1kHz to 48kHz with neural bandwidth extension.
     Falls back to torchaudio.transforms.Resample if AudioSR unavailable.
     """
 
