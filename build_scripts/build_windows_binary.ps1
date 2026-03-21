@@ -48,7 +48,8 @@ if (-not $SkipPythonDeps) {
         python -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
     }
 
-    python -m pip install -r "$ROOT\trinity_engine\requirements.txt"
+    # Install all Windows dependencies
+    python -m pip install -r "$ROOT\requirements_win.txt"
     python -m pip install pyinstaller
     Write-Host "      Dependencies installed." -ForegroundColor Green
 } else {

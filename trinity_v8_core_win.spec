@@ -1,12 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
-# VOXIS V4.0.0 DENSE — Trinity V8 PyInstaller Spec (Windows x64)
+# VOXIS V4.0.0 DENSE — Trinity V8.1 PyInstaller Spec (Windows x64)
 # Copyright © 2026 Glass Stone LLC. All Rights Reserved.
 # CEO: Gabriel B. Rodriguez
 #
 # Build requirements (run on Windows):
 #   pip install "setuptools==69.5.1" "numpy<2.0"
-#   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
-#   pip install -r trinity_engine/requirements.txt pyinstaller
+#   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
+#   pip install -r requirements_win.txt pyinstaller
 #   pyinstaller --noconfirm --clean trinity_v8_core_win.spec
 
 import os
@@ -36,7 +36,6 @@ hiddenimports = [
     'audio_separator.separator.architectures.mdx_separator',
     'audio_separator.separator.architectures.vr_separator',
     'audio_separator.separator.architectures.demucs_separator',
-    'onnxruntime', 'onnxruntime.capi',
     # AudioSR (latent diffusion upsampler)
     'audiosr', 'audiosr.pipeline', 'audiosr.lowpass',
     'audiosr.clap', 'audiosr.latent_diffusion',
@@ -52,11 +51,19 @@ hiddenimports = [
     'filelock', 'requests', 'urllib3', 'certifi',
     # System / Cross-platform
     'psutil', 'platform', 'hashlib', 'contextlib',
+    # ONNX + DirectML (Windows GPU acceleration)
+    'onnx', 'onnx.checker', 'onnx.numpy_helper', 'onnx.helper',
+    'onnxruntime', 'onnxruntime.capi', 'onnxruntime.capi._pybind_state',
     # Voxis pipeline modules (v8.1 resilient backend)
     'modules.ingest',
     'modules.device_utils',
+    'modules.path_utils',
+    'modules.onnx_bridge',
+    'modules.coreml_bridge',
+    'modules.adaptive_chunker',
     'modules.uvr_processor',
-    'modules.deep_filter',
+    'modules.spectrum_analyzer',
+    'modules.voicerestore_wrapper',
     'modules.upsampler',
     'modules.mastering_phase',
     'modules.error_telemetry',
@@ -102,6 +109,11 @@ try:
     binaries += collect_dynamic_libs('llvmlite')
 except Exception:
     pass
+# DirectML DLL (Windows GPU acceleration)
+try:
+    binaries += collect_dynamic_libs('onnxruntime')
+except Exception:
+    pass
 
 a = Analysis(
     ['trinity_engine/trinity_core.py'],
@@ -122,6 +134,7 @@ a = Analysis(
         'jupyter', 'notebook', 'IPython', 'wx',
         # macOS-only — not available on Windows
         'torch.backends.mps',
+        'coremltools',
     ],
     noarchive=False,
     optimize=0,  # 0 retains assert statements and docstrings (required for TorchScript)
@@ -148,5 +161,6 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    # Output will be trinity_v8_core.exe on Windows automatically
+    icon='app/src-tauri/icons/icon.ico',
+    # Output: trinity_v8_core.exe
 )
