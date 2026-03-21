@@ -342,6 +342,7 @@ if __name__ == "__main__":
     # Apply RAM limit globally before any model loading
     from modules.device_utils import DeviceOptimizer
     DeviceOptimizer.set_ram_limit(args.ram_limit)
+    print(f">> [SYSTEM] Acceleration: {DeviceOptimizer.get_acceleration_summary()}")
 
     engine = TrinityV8Desktop()
     success = engine.run_pipeline(

@@ -19,6 +19,7 @@ import warnings
 from .device_utils import DeviceOptimizer
 from .path_utils import get_engine_base_dir
 from .coreml_bridge import coreml_viable, IS_APPLE_SILICON
+from .onnx_bridge import directml_available
 
 # Suppress noisy warnings from audio-separator internals
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -78,16 +79,31 @@ class GlassStoneSeparator:
     def _resolve_ort_providers() -> list:
         """
         Return the best available ONNX Runtime execution providers.
-        Priority: CoreMLExecutionProvider → CPUExecutionProvider.
+        Priority: DirectML (Windows DX12) → CoreML (macOS) → CUDA → CPU.
         Used by audio-separator for MDX/VR model ONNX inference.
         """
         try:
             import onnxruntime as ort
             available = ort.get_available_providers()
+            providers = []
+
+            # Windows: DirectML for any DirectX 12 GPU (AMD, Intel, NVIDIA)
+            if directml_available() and "DmlExecutionProvider" in available:
+                print("[GS-PRISM] ONNX Runtime: DirectML execution provider active (DX12 GPU)")
+                providers.append("DmlExecutionProvider")
+
+            # macOS: CoreML for Neural Engine
             if IS_APPLE_SILICON and "CoreMLExecutionProvider" in available:
                 print("[GS-PRISM] ONNX Runtime: CoreML execution provider active")
-                return ["CoreMLExecutionProvider", "CPUExecutionProvider"]
-            return ["CPUExecutionProvider"]
+                providers.append("CoreMLExecutionProvider")
+
+            # NVIDIA: CUDA
+            if "CUDAExecutionProvider" in available:
+                print("[GS-PRISM] ONNX Runtime: CUDA execution provider active")
+                providers.append("CUDAExecutionProvider")
+
+            providers.append("CPUExecutionProvider")
+            return providers
         except ImportError:
             return ["CPUExecutionProvider"]
 

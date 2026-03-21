@@ -21,6 +21,7 @@ from huggingface_hub import hf_hub_download
 from .device_utils import DeviceOptimizer
 from .path_utils import get_engine_base_dir
 from .coreml_bridge import CoreMLBridge, CoreMLModule, coreml_viable
+from .onnx_bridge import ONNXBridge, ONNXModule, onnx_viable, directml_available
 
 # Path resolution for VoiceRestore and BigVGAN
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -66,10 +67,15 @@ class VoiceRestoreWrapper:
         self.bigvgan_model = None
         self._initialized = False
 
-        # CoreML acceleration state
+        # CoreML acceleration state (macOS)
         self._coreml_bridge     = CoreMLBridge() if coreml_viable() else None
         self._coreml_full_model = None   # Full VoiceRestore → CoreML MLModel
         self._coreml_enabled    = False  # True once CoreML acceleration is live
+
+        # ONNX/DirectML acceleration state (Windows/Linux/cross-platform)
+        self._onnx_bridge       = ONNXBridge() if onnx_viable() else None
+        self._onnx_session      = None   # Full model or vocoder ONNX session
+        self._onnx_enabled      = False
 
         # Configure intensity — explicit overrides take priority over mode defaults
         mode_steps = 48 if mode == "EXTREME" else 32
@@ -127,9 +133,12 @@ class VoiceRestoreWrapper:
             self._initialized = True
             print(f"[{self.__class__.__name__}] Initialization Complete. (device={self.device})")
 
-            # Attempt CoreML acceleration after successful PyTorch init
+            # Attempt hardware acceleration after successful PyTorch init
+            # Priority: CoreML (macOS Neural Engine) → ONNX/DirectML (Windows DX12)
             if coreml_viable():
                 self._try_coreml_acceleration()
+            elif onnx_viable():
+                self._try_onnx_acceleration()
 
         except Exception as e:
             print(f"[{self.__class__.__name__}] Failed to initialize: {e}")
@@ -237,6 +246,67 @@ class VoiceRestoreWrapper:
                       "running PyTorch (GS-VOCODER still on Neural Engine)")
         except Exception as e:
             print(f"[GS-CRYSTAL] Full model CoreML skipped: {e}")
+
+    # ── ONNX/DirectML Acceleration ────────────────────────────────────────────
+
+    def _try_onnx_acceleration(self):
+        """
+        Export GS-VOCODER (BigVGAN) to ONNX for DirectML/CUDA acceleration.
+
+        On Windows: DirectML routes inference to any DirectX 12 GPU (AMD/Intel/NVIDIA).
+        On Linux:   CUDAExecutionProvider for NVIDIA GPUs.
+        Fallback:   CPUExecutionProvider with ORT graph optimizations (still faster
+                    than raw PyTorch CPU due to ONNX operator fusion).
+        """
+        bridge = self._onnx_bridge
+        if bridge is None:
+            return
+
+        provider_name = ""
+        if directml_available():
+            provider_name = "DirectML (DirectX 12 GPU)"
+        else:
+            from .onnx_bridge import get_provider_name
+            provider_name = get_provider_name()
+
+        print(f"[GS-CRYSTAL] Initializing ONNX acceleration → {provider_name}...")
+
+        # ── GS-VOCODER (BigVGAN) → ONNX ──────────────────────────────────────
+        try:
+            dummy_mel = torch.zeros(1, 100, 128).cpu()
+            onnx_session = bridge.export(
+                self.bigvgan_model,
+                sample_inputs=(dummy_mel,),
+                model_name="gs_vocoder_bigvgan_24khz",
+                input_names=["mel_spectrogram"],
+                output_names=["waveform"],
+                dynamic_axes={
+                    "mel_spectrogram": {0: "batch", 2: "time"},
+                    "waveform":        {0: "batch", 2: "samples"},
+                },
+            )
+            if onnx_session:
+                wrapped = ONNXModule(
+                    original=self.bigvgan_model,
+                    session=onnx_session,
+                    input_name="mel_spectrogram",
+                    output_name="waveform",
+                    bridge=bridge,
+                )
+                self.bigvgan_model = wrapped
+                for attr in ("bigvgan_model", "vocoder", "bigvgan"):
+                    if hasattr(self.model, attr):
+                        setattr(self.model, attr, wrapped)
+                vr_sub = getattr(self.model, "voice_restore", None)
+                if vr_sub is not None:
+                    for attr in ("bigvgan", "vocoder", "bigvgan_model"):
+                        if hasattr(vr_sub, attr):
+                            setattr(vr_sub, attr, wrapped)
+                self._onnx_session = onnx_session
+                self._onnx_enabled = True
+                print(f"[GS-CRYSTAL] ✓ GS-VOCODER on {provider_name} (ONNX)")
+        except Exception as e:
+            print(f"[GS-CRYSTAL] GS-VOCODER ONNX export skipped: {e}")
 
     # ── Chunked inference settings ─────────────────────────────────────────
     CHUNK_SECONDS = 30        # Process audio in 30-second chunks

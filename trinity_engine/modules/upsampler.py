@@ -17,6 +17,7 @@ import torch
 from .device_utils import DeviceOptimizer
 from .path_utils import get_engine_base_dir
 from .coreml_bridge import CoreMLBridge, CoreMLModule, coreml_viable
+from .onnx_bridge import ONNXBridge, ONNXModule, onnx_viable
 
 # Try to import AudioSR safely
 try:
@@ -50,10 +51,15 @@ class TrinityUpscaler:
         self.audiosr_model = None
         self._initialized = False
 
-        # CoreML acceleration state
+        # CoreML acceleration state (macOS)
         self._coreml_bridge    = CoreMLBridge() if coreml_viable() else None
         self._coreml_denoiser  = None   # AudioSR UNet → CoreML
         self._coreml_active    = False
+
+        # ONNX/DirectML acceleration state (Windows/Linux/cross-platform)
+        self._onnx_bridge      = ONNXBridge() if onnx_viable() else None
+        self._onnx_denoiser    = None
+        self._onnx_active      = False
 
         # Resolve paths
         base_dir = get_engine_base_dir()
@@ -81,9 +87,11 @@ class TrinityUpscaler:
             self._initialized = True
             print(f"[{self.__class__.__name__}] ✓ GS-ASCEND model loaded on {self.device_str}")
 
-            # Attempt CoreML acceleration of the AudioSR denoiser (UNet)
+            # Attempt hardware acceleration of the AudioSR denoiser (UNet)
             if coreml_viable():
                 self._try_coreml_acceleration()
+            elif onnx_viable():
+                self._try_onnx_acceleration()
 
         except Exception as e:
             print(f"[{self.__class__.__name__}] AudioSR init failed: {e}")
@@ -179,6 +187,80 @@ class TrinityUpscaler:
 
         except Exception as e:
             print(f"[{self.__class__.__name__}] GS-ASCEND CoreML skipped: {e}")
+
+    def _try_onnx_acceleration(self):
+        """
+        Export AudioSR's UNet denoiser to ONNX for DirectML/CUDA acceleration.
+        Same duck-typed probing strategy as _try_coreml_acceleration.
+        """
+        bridge = self._onnx_bridge
+        if bridge is None:
+            return
+
+        from .onnx_bridge import get_provider_name
+        print(f"[{self.__class__.__name__}] Attempting GS-ASCEND ONNX export → {get_provider_name()}...")
+
+        try:
+            ldm = None
+            if isinstance(self.audiosr_model, dict):
+                ldm = self.audiosr_model.get("model")
+            elif hasattr(self.audiosr_model, "model"):
+                ldm = self.audiosr_model.model
+
+            unet = None
+            if ldm is not None:
+                for attr in ("model", "diffusion_model", "unet", "denoiser"):
+                    candidate = getattr(ldm, attr, None)
+                    if candidate is not None and isinstance(candidate, torch.nn.Module):
+                        unet = candidate
+                        break
+
+            if unet is None:
+                print(f"[{self.__class__.__name__}] UNet not found — ONNX skipped")
+                return
+
+            unet.eval()
+            c_in = 8
+            for module in unet.modules():
+                if isinstance(module, (torch.nn.Conv1d, torch.nn.Conv2d)):
+                    c_in = module.in_channels
+                    break
+
+            dummy_x = torch.zeros(1, c_in, 256).cpu()
+            dummy_t = torch.zeros(1).long().cpu()
+
+            onnx_session = bridge.export(
+                unet,
+                sample_inputs=(dummy_x, dummy_t),
+                model_name=f"gs_ascend_unet_cin{c_in}",
+                input_names=["noisy_latent", "timestep"],
+                output_names=["denoised_latent"],
+                dynamic_axes={
+                    "noisy_latent": {0: "batch", 2: "time"},
+                },
+            )
+
+            if onnx_session:
+                wrapped = ONNXModule(
+                    original=unet,
+                    session=onnx_session,
+                    input_name="noisy_latent",
+                    output_name="denoised_latent",
+                    bridge=bridge,
+                )
+                if ldm is not None:
+                    for attr in ("model", "diffusion_model", "unet", "denoiser"):
+                        if hasattr(ldm, attr) and isinstance(getattr(ldm, attr), torch.nn.Module):
+                            setattr(ldm, attr, wrapped)
+                            break
+                self._onnx_denoiser = onnx_session
+                self._onnx_active = True
+                print(f"[{self.__class__.__name__}] ✓ GS-ASCEND denoiser on {get_provider_name()} (ONNX)")
+            else:
+                print(f"[{self.__class__.__name__}] UNet ONNX export unavailable")
+
+        except Exception as e:
+            print(f"[{self.__class__.__name__}] GS-ASCEND ONNX skipped: {e}")
 
     def super_resolve(self, input_audio_path: str, target_sr: int = 48000) -> str:
         """

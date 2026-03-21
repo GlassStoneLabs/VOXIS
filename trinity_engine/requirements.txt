@@ -49,8 +49,16 @@ psutil>=5.9.0
 # coremltools requires Python 3.9+ and macOS 13+.
 coremltools>=8.0; sys_platform == "darwin"
 
-# ── ONNX Runtime ──────────────────────────────────────────────────────────────
-# CoreMLExecutionProvider is built into onnxruntime on macOS (no separate package).
-# Falls back to CPUExecutionProvider on non-Apple hardware.
-onnxruntime>=1.16.0
-# onnxruntime-gpu>=1.16.0       # CUDA (Windows/Linux)
+# ── ONNX (Cross-Platform Model Interchange) ──────────────────────────────────
+# ONNX model export, validation, and graph optimization.
+onnx>=1.14.0
+
+# ── ONNX Runtime (Hardware-Accelerated Inference) ────────────────────────────
+# Platform-specific providers are built into the base package:
+#   macOS:   CoreMLExecutionProvider (Neural Engine)
+#   Windows: DmlExecutionProvider (DirectML → any DX12 GPU)
+#   Linux:   CPUExecutionProvider
+# For NVIDIA CUDA: pip install onnxruntime-gpu>=1.16.0
+# For Windows DirectML: pip install onnxruntime-directml>=1.16.0
+onnxruntime>=1.16.0; sys_platform != "win32"
+onnxruntime-directml>=1.16.0; sys_platform == "win32"

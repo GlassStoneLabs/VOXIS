@@ -56,14 +56,38 @@ class DeviceOptimizer:
             return False
 
     @staticmethod
+    def is_directml_available() -> bool:
+        """True when DirectML (DirectX 12 GPU) is available on Windows."""
+        if platform.system() != "Windows":
+            return False
+        try:
+            import onnxruntime as ort
+            return "DmlExecutionProvider" in ort.get_available_providers()
+        except ImportError:
+            return False
+
+    @staticmethod
+    def is_onnx_available() -> bool:
+        """True when ONNX Runtime is installed for cross-platform acceleration."""
+        try:
+            import onnxruntime  # noqa: F401
+            return True
+        except ImportError:
+            return False
+
+    @staticmethod
     def get_acceleration_summary() -> str:
         """Human-readable acceleration path for current hardware."""
         if DeviceOptimizer.is_coreml_available():
             return "CoreML (Neural Engine + GPU + CPU)"
+        if DeviceOptimizer.is_directml_available():
+            return "DirectML (DirectX 12 GPU)"
         if DeviceOptimizer.is_mps_available():
             return "MPS (Apple GPU)"
         if DeviceOptimizer.is_cuda_available():
             return "CUDA (NVIDIA GPU)"
+        if DeviceOptimizer.is_onnx_available():
+            return "ONNX Runtime (CPU optimized)"
         return "CPU"
 
     @staticmethod

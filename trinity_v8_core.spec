@@ -56,6 +56,7 @@ hiddenimports = [
     'modules.device_utils',
     'modules.path_utils',
     'modules.coreml_bridge',
+    'modules.onnx_bridge',
     'modules.uvr_processor',
     'modules.spectrum_analyzer',
     'modules.voicerestore_wrapper',
@@ -70,7 +71,8 @@ hiddenimports = [
     'coremltools.converters.mil.frontend.torch',
     'coremltools.converters.mil.frontend.torch.ops',
     'coremltools.proto', 'coremltools.optimize',
-    # ONNX Runtime CoreML provider
+    # ONNX + ONNX Runtime (cross-platform acceleration)
+    'onnx', 'onnx.checker', 'onnx.numpy_helper', 'onnx.helper',
     'onnxruntime', 'onnxruntime.capi', 'onnxruntime.capi._pybind_state',
     # VoiceRestore
     'model', 'BigVGAN', 'bigvgan', 'voice_restore',
