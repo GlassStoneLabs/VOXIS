@@ -32,6 +32,9 @@ warnings.filterwarnings("ignore", message="`torchaudio.backend.common.AudioMetaD
 warnings.filterwarnings("ignore", category=FutureWarning, message=".*torch.cuda.amp.autocast.*")
 warnings.filterwarnings("ignore", category=FutureWarning, message=".*torch.amp.autocast.*")
 warnings.filterwarnings("ignore", category=FutureWarning, message=".*torch.nn.utils.weight_norm.*")
+# coremltools / scikit-learn version mismatch (harmless — conversion API unused for sklearn)
+warnings.filterwarnings("ignore", message=".*scikit-learn version.*is not supported.*")
+warnings.filterwarnings("ignore", message=".*TracerWarning.*")
 
 # Enable MPS fallback for ops not supported on Apple Silicon (e.g. AudioSR channels)
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
@@ -41,6 +44,7 @@ from modules.ingest import AudioDecoder
 from modules.error_telemetry import ErrorTelemetryController
 from modules.pipeline_cache import cache as pipeline_cache
 from modules.retry_engine import RetryEngine
+from modules.adaptive_chunker import AdaptiveChunker
 
 
 class TrinityV8Desktop:
@@ -206,6 +210,37 @@ class TrinityV8Desktop:
                     self.cache.put(job_key, "01_ingest", working_wav)
                 self.cache.put(ingest_key, "01_ingest", working_wav)
             print(f"   ⏱ Ingest: {time.perf_counter() - t0:.2f}s")
+
+            # ── ADAPTIVE CHUNKING GATE ──────────────────────────────────
+            # If the ingested audio is long (>5 min), split it into adaptive
+            # chunks with the sliding-window chunker. Each chunk runs through
+            # stages 2-6 independently, then everything is reassembled.
+            chunker = AdaptiveChunker()
+            split_result = chunker.split(working_wav)
+            chunk_paths = split_result["chunk_paths"]
+            should_chunk = split_result["should_chunk"]
+
+            if should_chunk:
+                num = len(chunk_paths)
+                print(f">> [CHUNKER] Long file detected — splitting into {num} adaptive chunks")
+                assembled_parts = []
+                for ci, c_path in enumerate(chunk_paths):
+                    print(f"\n>> [CHUNKER] ── Chunk {ci+1}/{num} ──────────────────────")
+                    chunk_out = self._run_stages_2_to_6(
+                        c_path, params, job_key, auto_eq=None, ci=ci, total=num
+                    )
+                    assembled_parts.append(chunk_out)
+
+                # Reassemble with crossfade stitching
+                chunker.assemble(assembled_parts, output_path)
+                chunker.cleanup()
+
+                total = time.perf_counter() - pipeline_start
+                print(f"\n{'='*60}")
+                print(f"  ✓ Restoration Complete ({num} chunks) → {os.path.basename(output_path)}")
+                print(f"  Total Pipeline Time: {total:.2f}s")
+                print(f"{'='*60}\n")
+                return True
 
             # ── STEP 2/6 · SEPARATE ─────────────────────────────────────
             gc.collect()  # Free ingest buffers before loading separator model
