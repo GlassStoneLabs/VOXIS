@@ -45,6 +45,9 @@ from modules.error_telemetry import ErrorTelemetryController
 from modules.pipeline_cache import cache as pipeline_cache
 from modules.retry_engine import RetryEngine
 from modules.adaptive_chunker import AdaptiveChunker
+from modules.temp_manager import TempFileManager
+
+_DEFAULT_AUTO_EQ = {'lowpass_hz': 20000.0, 'highpass_hz': 20.0, 'vocal_presence_db': 0.0}
 
 
 class TrinityV8Desktop:
@@ -62,7 +65,8 @@ class TrinityV8Desktop:
         # ── Infrastructure (lightweight) ─────────────────────────────────
         self.telemetry = ErrorTelemetryController()
         self.cache     = pipeline_cache
-        self.decoder   = AudioDecoder()
+        self.decoder   = None  # Created per-run with TempFileManager
+        self._temp_manager = None  # Created per run_pipeline() call
 
         # ── Lazy-loaded pipeline nodes (None until first use) ────────────
         self._separator        = None
@@ -85,7 +89,7 @@ class TrinityV8Desktop:
             from modules.device_utils import DeviceOptimizer
             DeviceOptimizer.enforce_ram_limit("SEPARATE (GS-PRISM)")
             from modules.uvr_processor import GlassStoneSeparator
-            self._separator = GlassStoneSeparator()
+            self._separator = GlassStoneSeparator(temp_manager=self._temp_manager)
         return self._separator
 
     @property
@@ -105,6 +109,7 @@ class TrinityV8Desktop:
                 mode=self._mode,
                 steps_override=self._denoise_steps,
                 cfg_override=self._denoise_strength,
+                temp_manager=self._temp_manager,
             )
         return self._denoiser
 
@@ -114,15 +119,30 @@ class TrinityV8Desktop:
             from modules.device_utils import DeviceOptimizer
             DeviceOptimizer.enforce_ram_limit("UPSCALE (GS-ASCEND)")
             from modules.upsampler import TrinityUpscaler
-            self._upscaler = TrinityUpscaler(quality=self._mode)
+            self._upscaler = TrinityUpscaler(quality=self._mode, temp_manager=self._temp_manager)
         return self._upscaler
 
     @property
     def limiter(self):
         if self._limiter is None:
             from modules.mastering_phase import PedalboardMastering
-            self._limiter = PedalboardMastering()
+            self._limiter = PedalboardMastering(temp_manager=self._temp_manager)
         return self._limiter
+
+    # ── Cache helper ─────────────────────────────────────────────────────
+
+    def _cached_stage(self, cache_key: str, stage_id: str, fn, msg: str):
+        """
+        Check cache before running a stage. On miss: gc, log, run fn(), store result.
+        Eliminates the repeated get/gc/print/put boilerplate across all stages.
+        """
+        result = self.cache.get(cache_key, stage_id)
+        if not result:
+            gc.collect()
+            print(msg)
+            result = fn()
+            self.cache.put(cache_key, stage_id, result)
+        return result
 
     # ── Chunked pipeline (stages 2–6 per chunk) ─────────────────────────
 
@@ -130,48 +150,60 @@ class TrinityV8Desktop:
         """
         Run pipeline stages 2-6 on a single chunk.
         Called by run_pipeline() when AdaptiveChunker splits a long file.
+        Per-chunk caching: each chunk gets its own cache key so partial
+        failures can resume without re-processing completed chunks.
         Returns path to the mastered WAV for this chunk.
         """
-        tag = f"chunk{ci}"
+        chunk_key = self.cache.make_chunk_key(job_key, ci)
+        tag = f"[{ci+1}/{total}]"
 
         # ── 2/6 SEPARATE ──
-        gc.collect()
-        print(f">> [{ci+1}/{total}] [2/6] GS-PRISM Voice Isolation...")
-        vocal_wav = self._stage_separate(chunk_wav)
-
-        # ── 3/6 ANALYZE ──
-        print(f">> [{ci+1}/{total}] [3/6] Spectrum Analysis...")
-        from modules.spectrum_analyzer import NoiseProfiler
-        noise_profile = self.profiler.analyze(vocal_wav)
-        try:
-            auto_eq = NoiseProfiler.compute_auto_eq(noise_profile)
-        except Exception:
-            auto_eq = {'lowpass_hz': 20000.0, 'highpass_hz': 20.0, 'vocal_presence_db': 0.0}
-
-        # ── 4/6 DENOISE ──
-        gc.collect()
-        print(f">> [{ci+1}/{total}] [4/6] GS-CRYSTAL Pre-Diffusion...")
-        enhanced_wav_1 = self._stage_denoise(vocal_wav, stage="pre-diffusion")
-
-        # ── 5/6 UPSCALE ──
-        gc.collect()
-        print(f">> [{ci+1}/{total}] [5/6] GS-ASCEND Upscale...")
-        post_denoised = self._stage_denoise(enhanced_wav_1, stage="post-diffusion")
-        enhanced_wav_2 = self._stage_upscale(post_denoised, target_sr=48000)
-
-        # ── 6/6 MASTER ──
-        gc.collect()
-        width = float(params.get('stereo_width', 0.50))
-        print(f">> [{ci+1}/{total}] [6/6] Mastering & Auto-EQ...")
-        mastered_wav = self._stage_master(
-            enhanced_wav_2,
-            width=width,
-            lowpass_hz=auto_eq.get('lowpass_hz', 20000.0),
-            highpass_hz=auto_eq.get('highpass_hz', 20.0),
-            vocal_presence_db=auto_eq.get('vocal_presence_db', 0.0),
+        vocal_wav = self._cached_stage(
+            chunk_key, "02_separate",
+            lambda: self._stage_separate(chunk_wav),
+            f">> {tag} [2/6] GS-PRISM Voice Isolation...",
         )
 
-        print(f">> [{ci+1}/{total}] ✓ Chunk complete → {os.path.basename(mastered_wav)}")
+        # ── 3/6 ANALYZE ──
+        print(f">> {tag} [3/6] Spectrum Analysis...")
+        noise_profile = self.profiler.analyze(vocal_wav)
+        try:
+            auto_eq = type(self.profiler).compute_auto_eq(noise_profile)
+        except Exception:
+            auto_eq = _DEFAULT_AUTO_EQ
+
+        # ── 4/6 DENOISE ──
+        enhanced_wav_1 = self._cached_stage(
+            chunk_key, "04_denoise",
+            lambda: self._stage_denoise(vocal_wav, stage="pre-diffusion"),
+            f">> {tag} [4/6] GS-CRYSTAL Pre-Diffusion Stage...",
+        )
+
+        # ── 5/6 UPSCALE ──
+        enhanced_wav_2 = self._cached_stage(
+            chunk_key, "05_upscale",
+            lambda: self._stage_upscale(
+                self._stage_denoise(enhanced_wav_1, stage="post-diffusion"),
+                target_sr=48000,
+            ),
+            f">> {tag} [5/6] GS-ASCEND Upscale...",
+        )
+
+        # ── 6/6 MASTER ──
+        width = float(params.get('stereo_width', 0.50))
+        mastered_wav = self._cached_stage(
+            chunk_key, "06_master",
+            lambda: self._stage_master(
+                enhanced_wav_2,
+                width=width,
+                lowpass_hz=auto_eq.get('lowpass_hz', 20000.0),
+                highpass_hz=auto_eq.get('highpass_hz', 20.0),
+                vocal_presence_db=auto_eq.get('vocal_presence_db', 0.0),
+            ),
+            f">> {tag} [6/6] Mastering & Auto-EQ...",
+        )
+
+        print(f">> {tag} ✓ Chunk complete → {os.path.basename(mastered_wav)}")
         return mastered_wav
 
     # ── Retry-wrapped stage methods ─────────────────────────────────────
@@ -189,7 +221,7 @@ class TrinityV8Desktop:
         return self.upscaler.super_resolve(input_wav, target_sr=target_sr)
 
     @RetryEngine.resilient_stage("MASTER (Pedalboard)", retries=2, fallback="passthrough")
-    def _stage_master(self, input_wav, width=0.50, lowpass_hz=20000.0, highpass_hz=20.0, vocal_presence_db=0.0):
+    def _stage_master(self, input_wav, width=0.50, lowpass_hz=20000.0, highpass_hz=19.0, vocal_presence_db=0.0):
         return self.limiter.apply(input_wav, width=width,
                                  lowpass_hz=lowpass_hz, highpass_hz=highpass_hz,
                                  vocal_presence_db=vocal_presence_db)
@@ -215,6 +247,14 @@ class TrinityV8Desktop:
               f"Width: {float(params.get('stereo_width', 0.50)) * 100:.0f}% | "
               f"Format: {params.get('output_format', 'WAV')}")
         print(f"{'='*60}\n")
+
+        # ── Per-run temp file manager ─────────────────────────────────
+        self._temp_manager = TempFileManager()
+        # (Re-)create decoder with this run's temp manager
+        self.decoder = AudioDecoder(temp_manager=self._temp_manager)
+        # Invalidate lazy-loaded modules so they pick up the new temp_manager
+        self._separator = None
+        self._limiter   = None
 
         # Apply params — invalidate denoiser/upscaler if settings changed
         mode     = params.get('denoise_mode', 'HIGH')
@@ -265,7 +305,7 @@ class TrinityV8Desktop:
             # If the ingested audio is long (>5 min), split it into adaptive
             # chunks with the sliding-window chunker. Each chunk runs through
             # stages 2-6 independently, then everything is reassembled.
-            chunker = AdaptiveChunker()
+            chunker = AdaptiveChunker(temp_manager=self._temp_manager)
             split_result = chunker.split(working_wav)
             chunk_paths = split_result["chunk_paths"]
             should_chunk = split_result["should_chunk"]
@@ -286,6 +326,7 @@ class TrinityV8Desktop:
                 chunker.cleanup()
 
                 total = time.perf_counter() - pipeline_start
+                self.cache.summary()
                 print(f"\n{'='*60}")
                 print(f"  ✓ Restoration Complete ({num} chunks) → {os.path.basename(output_path)}")
                 print(f"  Total Pipeline Time: {total:.2f}s")
@@ -293,31 +334,24 @@ class TrinityV8Desktop:
                 return True
 
             # ── STEP 2/6 · SEPARATE ─────────────────────────────────────
-            gc.collect()  # Free ingest buffers before loading separator model
             t0 = time.perf_counter()
-            cached = self.cache.get(job_key, "02_separate")
-            if cached:
-                vocal_wav = cached
-            else:
-                print(">> [2/6] Executing GS-PRISM Voice Isolation...")
-                vocal_wav = self._stage_separate(working_wav)
-                self.cache.put(job_key, "02_separate", vocal_wav)
+            vocal_wav = self._cached_stage(
+                job_key, "02_separate",
+                lambda: self._stage_separate(working_wav),
+                ">> [2/6] Executing GS-PRISM Voice Isolation...",
+            )
             print(f"   ⏱ Separate: {time.perf_counter() - t0:.2f}s")
 
             # ── STEP 3/6 · ANALYZE ──────────────────────────────────────
             t0 = time.perf_counter()
             print(">> [3/6] Spectrum Analysis & Noise Profiling...")
-            from modules.spectrum_analyzer import NoiseProfiler
             noise_profile = self.profiler.analyze(vocal_wav)
-
-            # ── AUTO-EQ: derive optimal filter settings from spectral profile ──
             try:
-                auto_eq = NoiseProfiler.compute_auto_eq(noise_profile)
+                auto_eq = type(self.profiler).compute_auto_eq(noise_profile)
             except Exception as eq_err:
                 print(f"[WARNING] Auto-EQ computation failed: {eq_err}")
-                auto_eq = {'lowpass_hz': 20000.0, 'highpass_hz': 20.0, 'vocal_presence_db': 0.0}
-
-            # Emit structured auto-EQ line so the UI can parse and display it
+                auto_eq = _DEFAULT_AUTO_EQ
+            # Emit structured line so the UI can parse and display it
             print(
                 f"[NoiseProfiler] Auto-EQ: "
                 f"HPF={int(auto_eq.get('highpass_hz', 20))}Hz | "
@@ -327,49 +361,42 @@ class TrinityV8Desktop:
             print(f"   ⏱ Analyze: {time.perf_counter() - t0:.2f}s")
 
             # ── STEP 4/6 · DENOISE ──────────────────────────────────────
-            gc.collect()  # Free analyzer tensors before denoise model
             t0 = time.perf_counter()
-            cached = self.cache.get(job_key, "04_denoise")
-            if cached:
-                enhanced_wav_1 = cached
-            else:
-                print(">> [4/6] GS-CRYSTAL Neural Restoration (Pre-Diffusion)...")
-                enhanced_wav_1 = self._stage_denoise(vocal_wav, stage="pre-diffusion")
-                self.cache.put(job_key, "04_denoise", enhanced_wav_1)
+            enhanced_wav_1 = self._cached_stage(
+                job_key, "04_denoise",
+                lambda: self._stage_denoise(vocal_wav, stage="pre-diffusion"),
+                ">> [4/6] GS-CRYSTAL Neural Restoration (Pre-Diffusion)...",
+            )
             print(f"   ⏱ Denoise: {time.perf_counter() - t0:.2f}s")
 
-            # ── STEP 5/6 · UPSCALE (post-diffusion denoise → then resample) ─
-            gc.collect()  # Free denoise model tensors before upscaler
+            # ── STEP 5/6 · UPSCALE (post-diffusion → resample) ──────────
+            # Post-diffusion cleanup FIRST (VoiceRestore outputs 24kHz),
+            # then upscale so the final sample rate sticks at 48kHz.
             t0 = time.perf_counter()
-            cached = self.cache.get(job_key, "05_upscale")
-            if cached:
-                enhanced_wav_2 = cached
-            else:
-                print(">> [5/6] GS-ASCEND Latent Diffusion Upscale to 48kHz...")
-                # Post-diffusion cleanup FIRST (VoiceRestore outputs 24kHz),
-                # then upscale so the final sample rate sticks at 48kHz.
-                post_denoised = self._stage_denoise(enhanced_wav_1, stage="post-diffusion")
-                enhanced_wav_2 = self._stage_upscale(post_denoised, target_sr=48000)
-                self.cache.put(job_key, "05_upscale", enhanced_wav_2)
+            enhanced_wav_2 = self._cached_stage(
+                job_key, "05_upscale",
+                lambda: self._stage_upscale(
+                    self._stage_denoise(enhanced_wav_1, stage="post-diffusion"),
+                    target_sr=48000,
+                ),
+                ">> [5/6] GS-ASCEND Latent Diffusion Upscale to 48kHz...",
+            )
             print(f"   ⏱ Upscale: {time.perf_counter() - t0:.2f}s")
 
             # ── STEP 6/6 · MASTER ───────────────────────────────────────
-            gc.collect()  # Free upscaler resources before mastering
             t0 = time.perf_counter()
             width = float(params['stereo_width'])
-            cached = self.cache.get(job_key, "06_master")
-            if cached:
-                mastered_wav = cached
-            else:
-                print(f">> [6/6] Pedalboard AI Mastering & Auto-EQ...")
-                mastered_wav = self._stage_master(
+            mastered_wav = self._cached_stage(
+                job_key, "06_master",
+                lambda: self._stage_master(
                     enhanced_wav_2,
                     width=width,
                     lowpass_hz=auto_eq.get('lowpass_hz', 20000.0),
                     highpass_hz=auto_eq.get('highpass_hz', 20.0),
                     vocal_presence_db=auto_eq.get('vocal_presence_db', 0.0),
-                )
-                self.cache.put(job_key, "06_master", mastered_wav)
+                ),
+                ">> [6/6] Pedalboard AI Mastering & Auto-EQ...",
+            )
             print(f"   ⏱ Master: {time.perf_counter() - t0:.2f}s")
 
             # ── EXPORT ──────────────────────────────────────────────────
@@ -380,6 +407,7 @@ class TrinityV8Desktop:
             print(f"   ⏱ Export: {time.perf_counter() - t0:.2f}s")
 
             total = time.perf_counter() - pipeline_start
+            self.cache.summary()
             print(f"\n{'='*60}")
             print(f"  ✓ Restoration Complete → {os.path.basename(output_path)}")
             print(f"  Total Pipeline Time: {total:.2f}s")
@@ -396,13 +424,11 @@ class TrinityV8Desktop:
             return False
 
     def cleanup(self):
-        """Purges the trinity_temp working directory after a successful run."""
-        import shutil
-        from modules.path_utils import get_engine_base_dir
-        temp_dir = os.path.join(get_engine_base_dir(), "trinity_temp")
-        if os.path.isdir(temp_dir):
-            shutil.rmtree(temp_dir, ignore_errors=True)
-            print("[Cleanup] Purged trinity_temp working directory.")
+        """Purges the .temp/<job_id>/ working directory after a successful run."""
+        if self._temp_manager:
+            self._temp_manager.cleanup()
+        # Also clean up legacy trinity_temp/ if it still exists
+        TempFileManager.cleanup_legacy()
 
 
 if __name__ == "__main__":
