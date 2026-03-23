@@ -348,6 +348,22 @@ class TrinityV8Desktop:
             self._denoiser = None
             self._upscaler = None
 
+        # ── EXTREME: Activate all compute units (GPU + NPU/ANE + CPU) ──────
+        if mode == "EXTREME":
+            # Remove MPS memory cap → full GPU budget for inference
+            os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.0"
+            # Signal all module wrappers to force ComputeUnit.ALL (no fallback)
+            os.environ["VOXIS_EXTREME_ACCEL"] = "1"
+            try:
+                from modules.device_utils import DeviceOptimizer
+                accel = DeviceOptimizer.get_acceleration_summary()
+                print(f">> [EXTREME] ALL COMPUTE UNITS ACTIVE: {accel}")
+                print(f">> [EXTREME] GPU: full memory budget | NPU: CoreML ComputeUnit.ALL | CPU: async fallback")
+            except Exception:
+                print(">> [EXTREME] Multi-compute mode active (GPU + NPU + CPU)")
+        else:
+            os.environ.pop("VOXIS_EXTREME_ACCEL", None)
+
         # Generate cache key from file content + params
         job_key = self.cache.make_job_key(input_path, params)
 

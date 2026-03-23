@@ -84,58 +84,95 @@ const Logo = () => (
 
 // ── App ──────────────────────────────────────────────────────────────────────
 
-const STAGE_COLORS = ['var(--red)', 'var(--blue)', 'var(--yellow)', 'var(--black)', 'var(--red)', 'var(--blue)', 'var(--black)'];
+// Distinct semantic color per stage — Bauhaus + extended palette
+const STAGE_COLORS = [
+  '#2B5EA0',  // 1 GATEWAY  — blue
+  '#C9382D',  // 2 PRISM    — red
+  '#D97706',  // 3 SPECTRAL — amber
+  '#0D9488',  // 4 PURIFY   — teal
+  '#7C3AED',  // 5 ASCEND   — violet
+  '#EA580C',  // 6 TEMPER   — orange
+  '#22C55E',  // 7 CAST     — green
+];
 
 const AnimatedStageProgress = ({ currentStep }: { currentStep: number }) => {
+  const progressPct = currentStep === 0 ? 0 : Math.round((currentStep / STEPS.length) * 100);
+  const activeColor = currentStep > 0 ? STAGE_COLORS[currentStep - 1] : STAGE_COLORS[0];
+
   return (
     <div className="stage-progress-container">
-      {STEPS.map((step, i) => {
-        const isActive = currentStep === step.id;
-        const isDone = currentStep > step.id;
-        const isWaiting = currentStep < step.id;
-        const color = STAGE_COLORS[i % STAGE_COLORS.length];
+      {/* Overall progress bar */}
+      <div className="stage-overall-bar">
+        <motion.div
+          className="stage-overall-fill"
+          style={{ backgroundColor: activeColor }}
+          animate={{ width: `${progressPct}%` }}
+          transition={{ type: 'spring', stiffness: 80, damping: 20 }}
+        />
+      </div>
+      <div className="stage-overall-label" style={{ color: activeColor }}>
+        {currentStep === 0 ? 'INITIALIZING...' : `STAGE ${currentStep} OF ${STEPS.length} — ${STEPS[currentStep - 1]?.label}`}
+      </div>
 
-        return (
-          <motion.div
-            key={step.id}
-            className={`stage-block ${isActive ? 'active' : ''} ${isDone ? 'done' : ''}`}
-            initial={{ opacity: 0, scale: 0.8, y: 20 }}
-            animate={{ 
-              opacity: isWaiting ? 0.25 : 1, 
-              scale: isActive ? 1.03 : 1,
-              y: 0,
-            }}
-            style={{ 
-              borderColor: isActive || isDone ? color : 'var(--gray-2)',
-              backgroundColor: isActive ? 'var(--white)' : isDone ? 'var(--gray-1)' : 'transparent'
-            }}
-            transition={{ type: 'spring', stiffness: 300, damping: 20, delay: i * 0.05 }}
-          >
-            <div className="stage-block-num" style={{ color: isActive || isDone ? color : 'var(--gray-3)' }}>
-              {step.id}
-            </div>
-            <div className="stage-block-content">
-              <div className="stage-block-title">{step.label}</div>
-              <div className="stage-block-sub">{step.sublabel}</div>
-            </div>
-            {isActive && (
-              <motion.div 
-                className="stage-block-glow"
-                style={{ backgroundColor: color }}
-                animate={{ opacity: [0.1, 0.3, 0.1] }}
-                transition={{ repeat: Infinity, duration: 1.5 }}
-              />
-            )}
-            {isDone && (
-              <div className="stage-lock">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="3">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
+      {/* Stage list */}
+      <div className="stage-list">
+        {STEPS.map((step, i) => {
+          const isActive = currentStep === step.id;
+          const isDone = currentStep > step.id;
+          const color = STAGE_COLORS[i];
+
+          return (
+            <motion.div
+              key={step.id}
+              className={`stage-block ${isActive ? 'active' : ''} ${isDone ? 'done' : ''}`}
+              style={{ '--stage-color': color } as React.CSSProperties}
+              animate={{ opacity: isActive ? 1 : isDone ? 0.8 : 0.2 }}
+              transition={{ duration: 0.25 }}
+            >
+              {/* Colored left accent strip */}
+              <div className="stage-block-accent" style={{ backgroundColor: isDone || isActive ? color : 'transparent' }} />
+
+              {/* Number / checkmark badge */}
+              <div
+                className="stage-block-num"
+                style={{
+                  backgroundColor: isDone || isActive ? color : 'transparent',
+                  color: isDone || isActive ? '#fff' : 'var(--gray-2)',
+                  borderColor: isDone || isActive ? color : 'var(--gray-2)',
+                }}
+              >
+                {isDone ? '✓' : step.id}
               </div>
-            )}
-          </motion.div>
-        );
-      })}
+
+              <div className="stage-block-content">
+                <div className="stage-block-title" style={{ color: isActive ? color : undefined }}>
+                  {step.label}
+                </div>
+                {isActive && (
+                  <motion.div
+                    className="stage-block-sub"
+                    initial={{ opacity: 0, y: 3 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.08 }}
+                  >
+                    {step.sublabel}
+                  </motion.div>
+                )}
+              </div>
+
+              {/* Active pulse overlay */}
+              {isActive && (
+                <motion.div
+                  className="stage-block-pulse"
+                  style={{ backgroundColor: color }}
+                  animate={{ opacity: [0.06, 0.15, 0.06] }}
+                  transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
+                />
+              )}
+            </motion.div>
+          );
+        })}
+      </div>
     </div>
   );
 };
@@ -581,21 +618,6 @@ export default function App() {
             />
           </div>
 
-          {/* Noise Profile */}
-          <div className="sb-section">
-            <div className="sb-label">NOISE PROFILE</div>
-            <select
-              className="bauhaus-select"
-              value={noiseProfile}
-              onChange={e => setNoiseProfile(e.target.value)}
-              disabled={isRunning}
-            >
-              <option value="AUTO">AUTO (SMART)</option>
-              <option value="PODCAST">PODCAST</option>
-              <option value="VOICE">VOICE</option>
-            </select>
-          </div>
-
           {/* Restoration Steps */}
           <div className="sb-section">
             <div className="sb-label-row">
@@ -622,7 +644,6 @@ export default function App() {
               className="bauhaus-range range-red"
               disabled={isRunning}
             />
-            <div className="sb-desc">Controls how closely the model follows the noise profile. Higher values sharpen detail; lower values sound more natural.</div>
           </div>
 
           {/* High Precision */}
@@ -639,7 +660,6 @@ export default function App() {
                 <span className="toggle-track green" />
               </motion.label>
             </div>
-            <div className="sb-desc">32-bit float processing. Reduces rounding artifacts on quiet audio.</div>
           </div>
 
           {/* Stereo Output */}
@@ -656,7 +676,6 @@ export default function App() {
                 <span className="toggle-track blue" />
               </motion.label>
             </div>
-            <div className="sb-desc">Preserve left/right channels. Disable for mono mic recordings.</div>
           </div>
 
           {/* RAM Limit */}
@@ -809,20 +828,14 @@ export default function App() {
                 {/* ── Pipeline Guide (idle state) ── */}
                 {!isRunning && status !== 'error' && (
                   <div className="pipeline-guide">
-                    <div className="guide-header">HOW IT WORKS</div>
-                    <div className="guide-subtitle">
-                      Voxis restores degraded audio through a 7-stage neural pipeline.
-                      Each step builds on the last to deliver studio-quality results.
-                    </div>
-                    <div className="guide-steps">
-                      {STEPS.map(step => (
-                        <div key={step.id} className="guide-step">
-                          <div className="guide-step-num">{step.id}</div>
-                          <div className="guide-step-content">
-                            <div className="guide-step-title">
-                              {step.label} <span className="guide-step-sub">— {step.sublabel}</span>
-                            </div>
-                            <div className="guide-step-desc">{step.description}</div>
+                    <div className="guide-header">7-STAGE NEURAL PIPELINE</div>
+                    <div className="guide-grid">
+                      {STEPS.map((step, i) => (
+                        <div key={step.id} className="guide-chip">
+                          <div className="guide-chip-num" style={{ backgroundColor: STAGE_COLORS[i] }}>{step.id}</div>
+                          <div className="guide-chip-body">
+                            <div className="guide-chip-title">{step.label}</div>
+                            <div className="guide-chip-sub">{step.sublabel}</div>
                           </div>
                         </div>
                       ))}

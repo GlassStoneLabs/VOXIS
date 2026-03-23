@@ -177,7 +177,17 @@ class CoreMLBridge:
         if not COREML_AVAILABLE:
             return None
 
-        # Try compute unit tiers from most to least optimal
+        # In EXTREME mode: force ComputeUnit.ALL only (GPU + NPU + CPU simultaneously)
+        extreme = os.environ.get("VOXIS_EXTREME_ACCEL") == "1"
+        if extreme:
+            try:
+                model = ct.models.MLModel(pkg_path, compute_units=ct.ComputeUnit.ALL)
+                print("[CoreMLBridge] [EXTREME] ALL compute units: GPU + NPU (ANE) + CPU")
+                return model
+            except Exception as e:
+                print(f"[CoreMLBridge] [EXTREME] ComputeUnit.ALL failed: {e} — falling through to tiers")
+
+        # Standard: try compute unit tiers from most to least optimal
         compute_tiers = [
             (ct.ComputeUnit.ALL,         "ALL (CPU + GPU + NPU)"),
             (ct.ComputeUnit.CPU_AND_NE,  "CPU + Neural Engine (ANE/NPU)"),

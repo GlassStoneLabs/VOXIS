@@ -146,13 +146,21 @@ class VoiceRestoreWrapper:
             print(f"[{self.__class__.__name__}] Initialization Complete. (device={self.device})")
 
             # Attempt torch.compile for fused graph execution (PyTorch 2.0+)
-            # Only on CUDA — inductor backend does not support MPS or CPU reliably.
-            if hasattr(torch, 'compile') and str(self.device).startswith('cuda'):
-                try:
-                    self.model = torch.compile(self.model, mode='reduce-overhead')
-                    print(f"[{self.__class__.__name__}] torch.compile active (reduce-overhead mode)")
-                except Exception as compile_err:
-                    print(f"[{self.__class__.__name__}] torch.compile skipped: {compile_err}")
+            # CUDA: inductor backend. EXTREME+MPS: aot_eager backend (graph fusion without inductor).
+            extreme = os.environ.get("VOXIS_EXTREME_ACCEL") == "1"
+            if hasattr(torch, 'compile'):
+                if str(self.device).startswith('cuda'):
+                    try:
+                        self.model = torch.compile(self.model, mode='reduce-overhead')
+                        print(f"[{self.__class__.__name__}] torch.compile active (CUDA inductor)")
+                    except Exception as compile_err:
+                        print(f"[{self.__class__.__name__}] torch.compile skipped: {compile_err}")
+                elif extreme and str(self.device) == 'mps':
+                    try:
+                        self.model = torch.compile(self.model, backend='aot_eager')
+                        print(f"[{self.__class__.__name__}] torch.compile active (MPS aot_eager — EXTREME)")
+                    except Exception as compile_err:
+                        print(f"[{self.__class__.__name__}] torch.compile (MPS) skipped: {compile_err}")
 
             # Attempt hardware acceleration after successful PyTorch init
             # Priority: CoreML (macOS Neural Engine) → ONNX/DirectML (Windows DX12)
