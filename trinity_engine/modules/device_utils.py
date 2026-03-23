@@ -3,7 +3,7 @@ import torch
 
 class DeviceOptimizer:
     """
-    Utility class for cross-platform model hardware acceleration in Trinity V8.1.
+    Utility class for cross-platform model hardware acceleration in Trinity V8.2.
     Handles dynamic detection of CUDA (NVIDIA), MPS (Apple Silicon), and CPU.
     """
     
@@ -253,13 +253,13 @@ class DeviceOptimizer:
             info["system_ram_total_gb"] = "unknown (psutil not installed)"
 
         if torch.cuda.is_available():
-            for i in range(torch.cuda.device_count()):
-                allocated = torch.cuda.memory_allocated(i) / (1024**3)
-                reserved = torch.cuda.memory_reserved(i) / (1024**3)
-                total = torch.cuda.get_device_properties(i).total_mem / (1024**3)
-                info[f"gpu_{i}_allocated_gb"] = round(allocated, 2)
-                info[f"gpu_{i}_reserved_gb"] = round(reserved, 2)
-                info[f"gpu_{i}_total_gb"] = round(total, 2)
+            i = torch.cuda.current_device()
+            allocated = torch.cuda.memory_allocated(i) / (1024**3)
+            reserved = torch.cuda.memory_reserved(i) / (1024**3)
+            total = torch.cuda.get_device_properties(i).total_mem / (1024**3)
+            info[f"gpu_{i}_allocated_gb"] = round(allocated, 2)
+            info[f"gpu_{i}_reserved_gb"] = round(reserved, 2)
+            info[f"gpu_{i}_total_gb"] = round(total, 2)
 
         return info
 

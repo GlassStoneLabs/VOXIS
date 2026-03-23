@@ -45,12 +45,14 @@ class TrinityUpscaler:
         "EXTREME": 100,   # ~150s per track
     }
 
-    def __init__(self, device=None, quality: str = "HIGH"):
+    def __init__(self, device=None, quality: str = "HIGH", temp_manager=None):
         self.device = device or DeviceOptimizer.get_optimal_device()
         self.device_str = DeviceOptimizer.get_device_string()
         self.ddim_steps = self.PRESETS.get(quality, 50)
         self.audiosr_model = None
         self._initialized = False
+        self._temp_manager = temp_manager
+        self._resampler_cache = {}  # (orig_sr, target_sr) → Resample instance
 
         # CoreML acceleration state (macOS)
         self._coreml_bridge    = CoreMLBridge() if coreml_viable() else None
@@ -65,7 +67,10 @@ class TrinityUpscaler:
         # Resolve paths
         base_dir = get_engine_base_dir()
         self.cache_dir = os.path.join(base_dir, "dependencies", "models", "huggingface")
-        self.temp_dir = os.path.join(base_dir, "trinity_temp")
+        if temp_manager:
+            self.temp_dir = temp_manager.get_stage_dir("upscale")
+        else:
+            self.temp_dir = os.path.join(base_dir, "trinity_temp")
         os.makedirs(self.cache_dir, exist_ok=True)
         os.makedirs(self.temp_dir, exist_ok=True)
 
@@ -309,7 +314,7 @@ class TrinityUpscaler:
 
             print(f"[{self.__class__.__name__}] Running GS-ASCEND diffusion ({self.ddim_steps} DDIM steps)...")
 
-            with torch.no_grad():
+            with torch.inference_mode():
                 waveform = super_resolution(
                     self.audiosr_model,
                     input_path,
@@ -324,32 +329,26 @@ class TrinityUpscaler:
                 if isinstance(waveform, np.ndarray):
                     waveform = torch.from_numpy(waveform)
 
-                # Force to CPU immediately for saving
-                if hasattr(waveform, 'cpu'):
+                # Move to CPU only if not already there
+                if waveform.device.type != 'cpu':
                     waveform = waveform.cpu()
 
-                # AudioSR may return (batch, channels, samples) or (batch, 1, channels, samples).
-                # Squeeze all size-1 dims first, then force to 2D if still higher.
-                waveform = waveform.squeeze()   # collapse all unit dims
-                if waveform.dim() > 2:
-                    # e.g. (2, channels, samples) — flatten leading dims into channels
-                    waveform = waveform.reshape(-1, waveform.shape[-1])
-
-                # Ensure 2D: (channels, samples)
-                if waveform.dim() == 1:
-                    waveform = waveform.unsqueeze(0)
+                # Flatten to 2D (channels, samples) in one pass — avoids intermediate copies
+                # AudioSR may return (batch, channels, samples) or (batch, 1, channels, samples)
+                waveform = waveform.contiguous().view(-1, waveform.shape[-1])
 
                 # Limit to stereo max
                 if waveform.shape[0] > 2:
                     waveform = waveform[:2, :]
 
-                # Normalize if needed
-                peak = torch.max(torch.abs(waveform))
+                # Normalize if needed (in-place to avoid copy)
+                peak = waveform.abs().max()
                 if peak > 1.0:
-                    waveform = waveform / peak
+                    waveform.div_(peak)
 
-                # Convert to float32 for torchaudio
-                waveform = waveform.to(torch.float32)
+                # Convert to float32 for torchaudio (no-op if already float32)
+                if waveform.dtype != torch.float32:
+                    waveform = waveform.to(torch.float32)
 
                 torchaudio.save(out_path, waveform, target_sr)
 
@@ -386,7 +385,17 @@ class TrinityUpscaler:
                 print(f"[{self.__class__.__name__}] Already at {target_sr}Hz, skipping.")
                 return input_path
 
-            resampler = torchaudio.transforms.Resample(orig_freq=sr, new_freq=target_sr)
+            # Reuse cached resampler to avoid rebuilding polyphase filter bank
+            # Cap cache at 4 entries to bound memory usage
+            cache_key = (sr, target_sr)
+            if cache_key not in self._resampler_cache:
+                if len(self._resampler_cache) >= 4:
+                    oldest = next(iter(self._resampler_cache))
+                    del self._resampler_cache[oldest]
+                self._resampler_cache[cache_key] = torchaudio.transforms.Resample(
+                    orig_freq=sr, new_freq=target_sr
+                )
+            resampler = self._resampler_cache[cache_key]
             resampled = resampler(audio)
 
             torchaudio.save(out_path, resampled, target_sr)

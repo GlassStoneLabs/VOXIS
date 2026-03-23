@@ -5,12 +5,13 @@
 #
 # Pipeline:
 #   1. INGEST      — FFmpeg universal decode (audio + video)
-#   2. SEPARATE    — GS-PRISM Voice Isolation
-#   3. ANALYZE     — Spectrum Noise Profile + Auto-EQ
-#   4. DENOISE     — GS-CRYSTAL Neural Restoration (Pre-Diffusion)
-#   5. UPSCALE     — GS-ASCEND Latent Diffusion 48kHz + post-diffusion denoise
-#   6. MASTER      — Pedalboard Limiter + Stereo Width
-#   7. EXPORT      — 24-bit WAV or FLAC
+#   2. SEPARATE    — GS-PRISM Voice Isolation (BS-RoFormer Transformer)
+#   3. REFINE      — GS-REFINE Diff-HierVC Diffusion Refinement
+#   4. ANALYZE     — Spectrum Noise Profile + Auto-EQ
+#   5. DENOISE     — GS-CRYSTAL Neural Restoration (Pre-Diffusion)
+#   6. UPSCALE     — GS-ASCEND Latent Diffusion 48kHz + post-diffusion denoise
+#   7. MASTER      — Pedalboard Limiter + Stereo Width
+#   8. EXPORT      — 24-bit WAV or FLAC
 #
 # Performance: Lazy model loading — models only load when their stage
 #              is first called, reducing startup from ~170s to ~2s.
@@ -70,6 +71,7 @@ class TrinityV8Desktop:
 
         # ── Lazy-loaded pipeline nodes (None until first use) ────────────
         self._separator        = None
+        self._refiner          = None
         self._profiler         = None
         self._denoiser         = None
         self._upscaler         = None
@@ -91,6 +93,15 @@ class TrinityV8Desktop:
             from modules.uvr_processor import GlassStoneSeparator
             self._separator = GlassStoneSeparator(temp_manager=self._temp_manager)
         return self._separator
+
+    @property
+    def refiner(self):
+        if self._refiner is None:
+            from modules.device_utils import DeviceOptimizer
+            DeviceOptimizer.enforce_ram_limit("REFINE (GS-REFINE)")
+            from modules.diffhiervc_wrapper import DiffHierVCWrapper
+            self._refiner = DiffHierVCWrapper(temp_manager=self._temp_manager)
+        return self._refiner
 
     @property
     def profiler(self):
@@ -129,6 +140,17 @@ class TrinityV8Desktop:
             self._limiter = PedalboardMastering(temp_manager=self._temp_manager)
         return self._limiter
 
+    # ── Memory Optimization ──────────────────────────────────────────────
+
+    def _free_model(self, attr_name: str, stage_name: str = ""):
+        """Explicitly unloads a model and clears GPU/MPS/CPU cache to reclaim RAM."""
+        if getattr(self, attr_name, None) is not None:
+            setattr(self, attr_name, None)
+            from modules.device_utils import DeviceOptimizer
+            DeviceOptimizer.cleanup_memory()
+            if stage_name:
+                print(f">> [SYSTEM] Freed memory for {stage_name}")
+
     # ── Cache helper ─────────────────────────────────────────────────────
 
     def _cached_stage(self, cache_key: str, stage_id: str, fn, msg: str):
@@ -144,73 +166,129 @@ class TrinityV8Desktop:
             self.cache.put(cache_key, stage_id, result)
         return result
 
-    # ── Chunked pipeline (stages 2–6 per chunk) ─────────────────────────
+    # ── Horizontal Chunk Pipeline ────────────────────────────────────────
 
-    def _run_stages_2_to_6(self, chunk_wav, params, job_key, auto_eq=None, ci=0, total=1):
+    def _process_chunks_horizontally(self, chunk_paths, params, job_key, num):
         """
-        Run pipeline stages 2-6 on a single chunk.
-        Called by run_pipeline() when AdaptiveChunker splits a long file.
-        Per-chunk caching: each chunk gets its own cache key so partial
-        failures can resume without re-processing completed chunks.
-        Returns path to the mastered WAV for this chunk.
+        Run pipeline stages horizontally across all chunks to minimize RAM.
+        Instead of running all stages per chunk, runs one stage for all chunks,
+        then unloads the heavy AI model before loading the next.
         """
-        chunk_key = self.cache.make_chunk_key(job_key, ci)
-        tag = f"[{ci+1}/{total}]"
+        current_paths = chunk_paths.copy()
+        
+        # ── 2/7 SEPARATE ──
+        print(f"\n>> [CHUNKER] ── Stage 2: Separate ───────────────────────")
+        for ci in range(num):
+            c_path = current_paths[ci]
+            chunk_key = self.cache.make_chunk_key(job_key, ci)
+            tag = f"[{ci+1}/{num}]"
+            current_paths[ci] = self._cached_stage(
+                chunk_key, "02_separate",
+                lambda p=c_path: self._stage_separate(p),
+                f">> {tag} [2/7] GS-PRISM Voice Isolation (BS-RoFormer)...",
+            )
+        self._free_model('_separator', 'Separate')
 
-        # ── 2/6 SEPARATE ──
-        vocal_wav = self._cached_stage(
-            chunk_key, "02_separate",
-            lambda: self._stage_separate(chunk_wav),
-            f">> {tag} [2/6] GS-PRISM Voice Isolation...",
-        )
+        # ── 3/7 REFINE ──
+        print(f"\n>> [CHUNKER] ── Stage 3: Refine ─────────────────────────")
+        for ci in range(num):
+            c_path = current_paths[ci]
+            chunk_key = self.cache.make_chunk_key(job_key, ci)
+            tag = f"[{ci+1}/{num}]"
+            current_paths[ci] = self._cached_stage(
+                chunk_key, "03_refine",
+                lambda p=c_path: self._stage_refine(p),
+                f">> {tag} [3/7] GS-REFINE Diffusion Refinement (Diff-HierVC)...",
+            )
+        self._free_model('_refiner', 'Refine')
 
-        # ── 3/6 ANALYZE ──
-        print(f">> {tag} [3/6] Spectrum Analysis...")
-        noise_profile = self.profiler.analyze(vocal_wav)
-        try:
-            auto_eq = type(self.profiler).compute_auto_eq(noise_profile)
-        except Exception:
-            auto_eq = _DEFAULT_AUTO_EQ
+        # ── 4/7 ANALYZE ──
+        print(f"\n>> [CHUNKER] ── Stage 4: Analyze ────────────────────────")
+        auto_eqs = [None] * num
+        for ci in range(num):
+            c_path = current_paths[ci]
+            tag = f"[{ci+1}/{num}]"
+            print(f">> {tag} [4/7] Spectrum Analysis...")
+            noise_profile = self.profiler.analyze(c_path)
+            try:
+                auto_eqs[ci] = type(self.profiler).compute_auto_eq(noise_profile)
+            except Exception:
+                auto_eqs[ci] = _DEFAULT_AUTO_EQ
 
-        # ── 4/6 DENOISE ──
-        enhanced_wav_1 = self._cached_stage(
-            chunk_key, "04_denoise",
-            lambda: self._stage_denoise(vocal_wav, stage="pre-diffusion"),
-            f">> {tag} [4/6] GS-CRYSTAL Pre-Diffusion Stage...",
-        )
+        # ── 5/7 DENOISE (Pre-Diffusion) ──
+        print(f"\n>> [CHUNKER] ── Stage 5: Denoise (Pre) ──────────────────")
+        for ci in range(num):
+            c_path = current_paths[ci]
+            chunk_key = self.cache.make_chunk_key(job_key, ci)
+            tag = f"[{ci+1}/{num}]"
+            current_paths[ci] = self._cached_stage(
+                chunk_key, "05_denoise",
+                lambda p=c_path: self._stage_denoise(p, stage="pre-diffusion"),
+                f">> {tag} [5/7] GS-CRYSTAL Pre-Diffusion (VoiceRestore)...",
+            )
 
-        # ── 5/6 UPSCALE ──
-        enhanced_wav_2 = self._cached_stage(
-            chunk_key, "05_upscale",
-            lambda: self._stage_upscale(
-                self._stage_denoise(enhanced_wav_1, stage="post-diffusion"),
-                target_sr=48000,
-            ),
-            f">> {tag} [5/6] GS-ASCEND Upscale...",
-        )
+        # ── Post-Diffusion Denoise ──
+        print(f"\n>> [CHUNKER] ── Stage 5: Denoise (Post) ─────────────────")
+        post_diffusion_paths = [None] * num
+        for ci in range(num):
+            c_path = current_paths[ci]
+            chunk_key = self.cache.make_chunk_key(job_key, ci)
+            tag = f"[{ci+1}/{num}]"
+            post_diffusion_paths[ci] = self._cached_stage(
+                chunk_key, "05_denoise_post",
+                lambda p=c_path: self._stage_denoise(p, stage="post-diffusion"),
+                f">> {tag} [5/7] GS-CRYSTAL Post-Diffusion Cleanup...",
+            )
+        self._free_model('_denoiser', 'Denoise')
 
-        # ── 6/6 MASTER ──
+        # ── 6/7 UPSCALE ──
+        print(f"\n>> [CHUNKER] ── Stage 6: Upscale ────────────────────────")
+        upscaled_paths = [None] * num
+        for ci in range(num):
+            c_path = post_diffusion_paths[ci]
+            chunk_key = self.cache.make_chunk_key(job_key, ci)
+            tag = f"[{ci+1}/{num}]"
+            upscaled_paths[ci] = self._cached_stage(
+                chunk_key, "06_upscale",
+                lambda p=c_path: self._stage_upscale(p, target_sr=48000),
+                f">> {tag} [6/7] GS-ASCEND Upscale (AudioSR)...",
+            )
+        self._free_model('_upscaler', 'Upscale')
+
+        # ── 7/7 MASTER ──
+        print(f"\n>> [CHUNKER] ── Stage 7: Master ─────────────────────────")
         width = float(params.get('stereo_width', 0.50))
-        mastered_wav = self._cached_stage(
-            chunk_key, "06_master",
-            lambda: self._stage_master(
-                enhanced_wav_2,
-                width=width,
-                lowpass_hz=auto_eq.get('lowpass_hz', 20000.0),
-                highpass_hz=auto_eq.get('highpass_hz', 20.0),
-                vocal_presence_db=auto_eq.get('vocal_presence_db', 0.0),
-            ),
-            f">> {tag} [6/6] Mastering & Auto-EQ...",
-        )
+        mastered_paths = [None] * num
+        for ci in range(num):
+            c_path = upscaled_paths[ci]
+            auto_eq = auto_eqs[ci]
+            chunk_key = self.cache.make_chunk_key(job_key, ci)
+            tag = f"[{ci+1}/{num}]"
+            mastered_paths[ci] = self._cached_stage(
+                chunk_key, "07_master",
+                lambda p=c_path, a=auto_eq: self._stage_master(
+                    p,
+                    width=width,
+                    lowpass_hz=a.get('lowpass_hz', 20000.0),
+                    highpass_hz=a.get('highpass_hz', 20.0),
+                    vocal_presence_db=a.get('vocal_presence_db', 0.0),
+                ),
+                f">> {tag} [7/7] Mastering & Auto-EQ...",
+            )
+            print(f">> {tag} ✓ Chunk complete → {os.path.basename(mastered_paths[ci])}")
+        self._free_model('_limiter', 'Master')
 
-        print(f">> {tag} ✓ Chunk complete → {os.path.basename(mastered_wav)}")
-        return mastered_wav
+        return mastered_paths
 
     # ── Retry-wrapped stage methods ─────────────────────────────────────
 
     @RetryEngine.resilient_stage("SEPARATE (GS-PRISM)", retries=2, fallback="passthrough")
     def _stage_separate(self, input_wav):
         return self.separator.process(input_wav)
+
+    @RetryEngine.resilient_stage("REFINE (GS-REFINE)", retries=2, fallback="passthrough")
+    def _stage_refine(self, input_wav):
+        return self.refiner.process(input_wav)
 
     @RetryEngine.resilient_stage("DENOISE (GS-CRYSTAL)", retries=3, fallback="cpu_retry")
     def _stage_denoise(self, input_wav, stage="pre-diffusion"):
@@ -254,16 +332,19 @@ class TrinityV8Desktop:
         self.decoder = AudioDecoder(temp_manager=self._temp_manager)
         # Invalidate lazy-loaded modules so they pick up the new temp_manager
         self._separator = None
+        self._refiner   = None
         self._limiter   = None
 
-        # Apply params — invalidate denoiser/upscaler if settings changed
+        # Apply params — invalidate only what changed
         mode     = params.get('denoise_mode', 'HIGH')
         steps    = int(params.get('denoise_steps', 16))
         strength = float(params.get('denoise_strength', 0.55))
-        if mode != self._mode or steps != self._denoise_steps or strength != self._denoise_strength:
-            self._mode             = mode
+        if steps != self._denoise_steps or strength != self._denoise_strength:
             self._denoise_steps    = steps
             self._denoise_strength = strength
+            self._denoiser = None
+        if mode != self._mode:
+            self._mode = mode
             self._denoiser = None
             self._upscaler = None
 
@@ -289,13 +370,13 @@ class TrinityV8Desktop:
             ingest_key = self.cache.make_ingest_key(input_path)
             working_wav = self.cache.get(ingest_key, "01_ingest")
             if working_wav:
-                print(">> [1/6] Import buffer hit — skipping FFmpeg decode.")
+                print(">> [1/7] Import buffer hit — skipping FFmpeg decode.")
             else:
                 cached = self.cache.get(job_key, "01_ingest")
                 if cached:
                     working_wav = cached
                 else:
-                    print(">> [1/6] Executing FFMPEG Decoder Extraction...")
+                    print(">> [1/7] Executing FFMPEG Decoder Extraction...")
                     working_wav = self.decoder.decode_to_wav(input_path)
                     self.cache.put(job_key, "01_ingest", working_wav)
                 self.cache.put(ingest_key, "01_ingest", working_wav)
@@ -313,13 +394,9 @@ class TrinityV8Desktop:
             if should_chunk:
                 num = len(chunk_paths)
                 print(f">> [CHUNKER] Long file detected — splitting into {num} adaptive chunks")
-                assembled_parts = []
-                for ci, c_path in enumerate(chunk_paths):
-                    print(f"\n>> [CHUNKER] ── Chunk {ci+1}/{num} ──────────────────────")
-                    chunk_out = self._run_stages_2_to_6(
-                        c_path, params, job_key, auto_eq=None, ci=ci, total=num
-                    )
-                    assembled_parts.append(chunk_out)
+                print(f">> [CHUNKER] Processing chunks horizontally to optimize RAM...")
+                
+                assembled_parts = self._process_chunks_horizontally(chunk_paths, params, job_key, num)
 
                 # Reassemble with crossfade stitching
                 chunker.assemble(assembled_parts, output_path)
@@ -333,19 +410,30 @@ class TrinityV8Desktop:
                 print(f"{'='*60}\n")
                 return True
 
-            # ── STEP 2/6 · SEPARATE ─────────────────────────────────────
+            # ── STEP 2/7 · SEPARATE (Transformer) ─────────────────────
             t0 = time.perf_counter()
             vocal_wav = self._cached_stage(
                 job_key, "02_separate",
                 lambda: self._stage_separate(working_wav),
-                ">> [2/6] Executing GS-PRISM Voice Isolation...",
+                ">> [2/7] GS-PRISM Voice Isolation (BS-RoFormer)...",
             )
+            self._free_model('_separator', 'Separate')
             print(f"   ⏱ Separate: {time.perf_counter() - t0:.2f}s")
 
-            # ── STEP 3/6 · ANALYZE ──────────────────────────────────────
+            # ── STEP 3/7 · REFINE (Diffusion) ────────────────────────────
             t0 = time.perf_counter()
-            print(">> [3/6] Spectrum Analysis & Noise Profiling...")
-            noise_profile = self.profiler.analyze(vocal_wav)
+            refined_wav = self._cached_stage(
+                job_key, "03_refine",
+                lambda: self._stage_refine(vocal_wav),
+                ">> [3/7] GS-REFINE Diffusion Refinement (Diff-HierVC)...",
+            )
+            self._free_model('_refiner', 'Refine')
+            print(f"   ⏱ Refine: {time.perf_counter() - t0:.2f}s")
+
+            # ── STEP 4/7 · ANALYZE ──────────────────────────────────────
+            t0 = time.perf_counter()
+            print(">> [4/7] Spectrum Analysis & Noise Profiling...")
+            noise_profile = self.profiler.analyze(refined_wav)
             try:
                 auto_eq = type(self.profiler).compute_auto_eq(noise_profile)
             except Exception as eq_err:
@@ -360,34 +448,38 @@ class TrinityV8Desktop:
             )
             print(f"   ⏱ Analyze: {time.perf_counter() - t0:.2f}s")
 
-            # ── STEP 4/6 · DENOISE ──────────────────────────────────────
+            # ── STEP 5/7 · DENOISE (Transformer-Diffusion) ──────────────
             t0 = time.perf_counter()
             enhanced_wav_1 = self._cached_stage(
-                job_key, "04_denoise",
-                lambda: self._stage_denoise(vocal_wav, stage="pre-diffusion"),
-                ">> [4/6] GS-CRYSTAL Neural Restoration (Pre-Diffusion)...",
+                job_key, "05_denoise",
+                lambda: self._stage_denoise(refined_wav, stage="pre-diffusion"),
+                ">> [5/7] GS-CRYSTAL Neural Restoration (VoiceRestore)...",
             )
             print(f"   ⏱ Denoise: {time.perf_counter() - t0:.2f}s")
 
-            # ── STEP 5/6 · UPSCALE (post-diffusion → resample) ──────────
-            # Post-diffusion cleanup FIRST (VoiceRestore outputs 24kHz),
-            # then upscale so the final sample rate sticks at 48kHz.
+            # ── STEP 6/7 · UPSCALE (Diffusion SR) ────────────────────────
+            # Post-diffusion cleanup FIRST, then free denoiser, then upscale
             t0 = time.perf_counter()
-            enhanced_wav_2 = self._cached_stage(
-                job_key, "05_upscale",
-                lambda: self._stage_upscale(
-                    self._stage_denoise(enhanced_wav_1, stage="post-diffusion"),
-                    target_sr=48000,
-                ),
-                ">> [5/6] GS-ASCEND Latent Diffusion Upscale to 48kHz...",
+            enhanced_wav_post = self._cached_stage(
+                job_key, "05_denoise_post",
+                lambda: self._stage_denoise(enhanced_wav_1, stage="post-diffusion"),
+                ">> [5/7] GS-CRYSTAL Post-Diffusion Cleanup...",
             )
+            self._free_model('_denoiser', 'Denoise')
+
+            enhanced_wav_2 = self._cached_stage(
+                job_key, "06_upscale",
+                lambda: self._stage_upscale(enhanced_wav_post, target_sr=48000),
+                ">> [6/7] GS-ASCEND Latent Diffusion Upscale (AudioSR)...",
+            )
+            self._free_model('_upscaler', 'Upscale')
             print(f"   ⏱ Upscale: {time.perf_counter() - t0:.2f}s")
 
-            # ── STEP 6/6 · MASTER ───────────────────────────────────────
+            # ── STEP 7/7 · MASTER (Polishing) ────────────────────────────
             t0 = time.perf_counter()
             width = float(params['stereo_width'])
             mastered_wav = self._cached_stage(
-                job_key, "06_master",
+                job_key, "07_master",
                 lambda: self._stage_master(
                     enhanced_wav_2,
                     width=width,
@@ -395,8 +487,9 @@ class TrinityV8Desktop:
                     highpass_hz=auto_eq.get('highpass_hz', 20.0),
                     vocal_presence_db=auto_eq.get('vocal_presence_db', 0.0),
                 ),
-                ">> [6/6] Pedalboard AI Mastering & Auto-EQ...",
+                ">> [7/7] Pedalboard AI Mastering & Auto-EQ...",
             )
+            self._free_model('_limiter', 'Master')
             print(f"   ⏱ Master: {time.perf_counter() - t0:.2f}s")
 
             # ── EXPORT ──────────────────────────────────────────────────
@@ -432,6 +525,35 @@ class TrinityV8Desktop:
 
 
 if __name__ == "__main__":
+    import multiprocessing
+    multiprocessing.freeze_support()
+
+    # PyInstaller + multiprocessing.freeze_support(): child processes re-execute
+    # this entry point with special flags (-B -S -I -c "from multiprocessing...").
+    # Guard against child processes re-parsing CLI args by checking sys.argv.
+    if len(sys.argv) > 1 and sys.argv[1] in ("-B", "-c"):
+        # This is a multiprocessing child — do nothing (freeze_support handled it).
+        sys.exit(0)
+
+    # ── Model management commands (no ML imports needed) ────────────────
+    if len(sys.argv) > 1 and sys.argv[1] == "--check-models":
+        from model_registry import check_all_models
+        import json as _json
+        status = check_all_models()
+        if "--json" in sys.argv:
+            print(_json.dumps(status))
+        else:
+            print(f"All installed: {status['all_installed']}")
+            for m in status['models']:
+                icon = "OK" if m['installed'] else "MISSING"
+                print(f"  [{icon}] {m['name']} ({m['size_mb']}MB)")
+        sys.exit(0)
+
+    if len(sys.argv) > 1 and sys.argv[1] == "--download-models":
+        from model_downloader import download_all_models
+        result = download_all_models()
+        sys.exit(0 if result["success"] else 1)
+
     parser = argparse.ArgumentParser(
         description="VOXIS V4.0.0 DENSE — Trinity V8.2 Backend | Glass Stone LLC © 2026"
     )
@@ -440,8 +562,8 @@ if __name__ == "__main__":
     parser.add_argument("--extreme",           action="store_true", help="Use EXTREME denoise mode")
     parser.add_argument("--stereo-width",      type=float, default=0.50,
                         help="Stereo width 0.0–1.0 (default 0.50)")
-    parser.add_argument("--format",            default="WAV", choices=["WAV", "FLAC", "MP3"],
-                        help="Output format: WAV (default), FLAC, or MP3")
+    parser.add_argument("--format",            default="WAV", choices=["WAV", "FLAC", "MP3", "WAV24", "WAV32", "ALAC"],
+                        help="Output format: WAV (default), FLAC, MP3, WAV24, WAV32, ALAC")
     parser.add_argument("--ram-limit",         type=int, default=75,
                         help="RAM usage ceiling as percent of total system RAM (25-100, default 75)")
     parser.add_argument("--denoise-steps",     type=int, default=32,

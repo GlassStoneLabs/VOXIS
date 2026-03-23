@@ -6,19 +6,22 @@ import json
 
 class PipelineCache:
     """
-    SHA-256 stage caching system for the Trinity V8.1 pipeline.
+    SHA-256 stage caching system for the Trinity V8.2 pipeline.
     Stores intermediate WAV outputs keyed by input file hash + params.
     Re-running the same file skips completed stages instantly.
     Stale caches older than TTL_SECONDS are purged on init.
     Cache is capped at MAX_SIZE_GB to prevent disk bloat.
     """
     TTL_SECONDS = 86400  # 24 hours
-    MAX_SIZE_GB = 8.0    # 8 GB max cache size
+    MAX_SIZE_GB = 4.0    # 4 GB max cache size (reduced from 8GB to prevent disk pressure)
 
     def __init__(self):
         home_dir = os.path.expanduser("~")
         self.cache_dir = os.path.join(home_dir, ".voxis", "cache")
         os.makedirs(self.cache_dir, exist_ok=True)
+        # Session statistics
+        self._hits = 0
+        self._misses = 0
         self._purge_stale()
         self._enforce_size_limit()
         print(f"[PipelineCache] Initialized → {self.cache_dir}")
@@ -46,6 +49,15 @@ class PipelineCache:
         combined = key_str + "|" + param_str
         return "jk_" + hashlib.sha256(combined.encode()).hexdigest()[:13]
 
+    def make_chunk_key(self, job_key: str, chunk_index: int) -> str:
+        """
+        Derive a deterministic sub-key for an individual chunk within a job.
+        Enables per-chunk caching so a failed 10-chunk job can resume from
+        chunk 7 without re-processing chunks 1-6.
+        """
+        combined = f"{job_key}|chunk_{chunk_index}"
+        return "ck_" + hashlib.sha256(combined.encode()).hexdigest()[:13]
+
     def get(self, job_key: str, stage: str) -> str | None:
         """
         Returns the cached WAV path for a given stage, or None on miss.
@@ -54,6 +66,7 @@ class PipelineCache:
         cached_path = os.path.join(self.cache_dir, f"{job_key}_{stage}.wav")
         if os.path.exists(cached_path):
             if os.path.getsize(cached_path) > 0:
+                self._hits += 1
                 print(f"[PipelineCache] ⚡ CACHE HIT  → {stage}")
                 return cached_path
             else:
@@ -63,6 +76,7 @@ class PipelineCache:
                     os.remove(cached_path)
                 except OSError:
                     pass
+        self._misses += 1
         return None
 
     def put(self, job_key: str, stage: str, wav_path: str) -> str:
@@ -90,6 +104,33 @@ class PipelineCache:
             if fname.startswith(job_key):
                 os.remove(os.path.join(self.cache_dir, fname))
         print(f"[PipelineCache] Invalidated cache for key {job_key}")
+
+    def stats(self) -> dict:
+        """Return session cache statistics and disk usage."""
+        total = self._hits + self._misses
+        ratio = (self._hits / total * 100) if total > 0 else 0.0
+        disk_bytes = sum(
+            os.path.getsize(os.path.join(self.cache_dir, f))
+            for f in os.listdir(self.cache_dir)
+            if os.path.isfile(os.path.join(self.cache_dir, f))
+        )
+        return {
+            "hits": self._hits,
+            "misses": self._misses,
+            "hit_ratio": round(ratio, 1),
+            "disk_mb": round(disk_bytes / (1024 ** 2), 1),
+            "entries": len([
+                f for f in os.listdir(self.cache_dir)
+                if os.path.isfile(os.path.join(self.cache_dir, f))
+            ]),
+        }
+
+    def summary(self):
+        """Print a human-readable cache performance report."""
+        s = self.stats()
+        print(f"[PipelineCache] Session: {s['hits']} hits / {s['misses']} misses "
+              f"({s['hit_ratio']}% hit rate) | "
+              f"Disk: {s['disk_mb']}MB across {s['entries']} entries")
 
     # ── Internal ────────────────────────────────────────────────────────
 

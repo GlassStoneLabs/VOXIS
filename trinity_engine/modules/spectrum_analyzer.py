@@ -2,6 +2,7 @@
 # Copyright © 2026 Glass Stone LLC. All Rights Reserved.
 
 import os
+import math
 import torch
 import torchaudio
 from .device_utils import DeviceOptimizer
@@ -9,7 +10,7 @@ from .device_utils import DeviceOptimizer
 
 class NoiseProfiler:
     """
-    Spectral analysis & noise profiling module for the Trinity V8.1 pipeline.
+    Spectral analysis & noise profiling module for the Trinity V8.2 pipeline.
     Calculates RMS, noise floor dB, spectral centroid, spectral rolloff,
     and dynamic range. Used to auto-compute EQ and denoise aggressiveness.
     """
@@ -26,17 +27,26 @@ class NoiseProfiler:
         print(f"[{self.__class__.__name__}] Profiling noise floor: {os.path.basename(audio_file_path)}")
 
         try:
-            audio_tensor, sr = torchaudio.load(audio_file_path)
+            # Load only up to 30s for spectral analysis — no quality loss,
+            # profile is statistical and converges well within this window
+            info = torchaudio.info(audio_file_path)
+            sr = info.sample_rate
+            total_frames = info.num_frames
+            max_analysis_frames = min(total_frames, sr * 30)
+            audio_tensor, sr = torchaudio.load(
+                audio_file_path, num_frames=max_analysis_frames
+            )
 
             # Move to CPU for reliable math (MPS has complex-number issues)
-            audio_tensor = audio_tensor.to("cpu")
+            if audio_tensor.device.type != 'cpu':
+                audio_tensor = audio_tensor.to("cpu")
 
             # ── RMS & dBFS ───────────────────────────────────────────
             rms = torch.sqrt(torch.mean(audio_tensor ** 2)).item()
             dbfs = 20 * math.log10(rms) if rms > 0 else -100.0
 
             # ── Peak amplitude ───────────────────────────────────────
-            peak = torch.max(torch.abs(audio_tensor)).item()
+            peak = audio_tensor.abs().max().item()
             peak_db = 20 * math.log10(peak) if peak > 0 else -100.0
 
             # ── Dynamic range (peak - rms in dB) ─────────────────────
@@ -52,18 +62,23 @@ class NoiseProfiler:
             if audio_tensor.shape[-1] >= n_fft:
                 # Mono mix for spectral analysis
                 mono = audio_tensor.mean(dim=0)
+                del audio_tensor  # Free multi-channel tensor early
                 window = torch.hann_window(n_fft)
                 stft = torch.stft(mono, n_fft=n_fft, return_complex=True, window=window)
-                magnitudes = torch.abs(stft)
-                freqs = torch.linspace(0, sr / 2, magnitudes.shape[0])
-
-                # Spectral centroid (center of energy)
-                centroid = (freqs.unsqueeze(1) * magnitudes).sum() / (magnitudes.sum() + 1e-8)
-                spectral_centroid_hz = centroid.item()
+                del mono
+                magnitudes = stft.abs()
+                del stft
 
                 # Mean magnitude per frequency bin (average over time frames)
+                # Compute mean_mag first, then derive centroid from 1D vector — avoids
+                # the large (n_freqs, n_frames) intermediate from freqs * magnitudes
                 mean_mag = magnitudes.mean(dim=1)
+                del magnitudes
+                freqs = torch.linspace(0, sr / 2, mean_mag.shape[0])
                 total_energy = mean_mag.sum().item() + 1e-8
+
+                # Spectral centroid from mean magnitudes (1D dot product, not 2D broadcast)
+                spectral_centroid_hz = (freqs * mean_mag).sum().item() / total_energy
 
                 # Spectral rolloff — frequency below which 95% of energy resides
                 cumulative = torch.cumsum(mean_mag, dim=0)
@@ -80,9 +95,11 @@ class NoiseProfiler:
                 vocal_mask = (freqs >= 1000) & (freqs <= 5000)
                 vocal_energy = mean_mag[vocal_mask].sum().item()
                 vocal_energy_ratio = vocal_energy / total_energy
+            else:
+                del audio_tensor
 
-            # ── Duration ─────────────────────────────────────────────
-            duration_sec = audio_tensor.shape[-1] / sr
+            # ── Duration (use full file, not analysis window) ─────────
+            duration_sec = total_frames / sr
 
             profile = {
                 "rms": round(rms, 6),
@@ -94,7 +111,7 @@ class NoiseProfiler:
                 "useful_low_hz": round(useful_low_hz, 1),
                 "vocal_energy_ratio": round(vocal_energy_ratio, 4),
                 "sample_rate": sr,
-                "channels": audio_tensor.shape[0],
+                "channels": info.num_channels,
                 "duration_sec": round(duration_sec, 2),
             }
 

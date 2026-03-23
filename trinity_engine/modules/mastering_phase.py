@@ -41,9 +41,26 @@ class PedalboardMastering:
         - Treble:     -1.5 dB shelf @ 10 kHz (Q=0.7)
     """
 
-    def __init__(self):
-        self.temp_dir = os.path.join(get_engine_base_dir(), "trinity_temp")
+    def __init__(self, temp_manager=None):
+        self._temp_manager = temp_manager
+        if temp_manager:
+            self.temp_dir = temp_manager.get_stage_dir("master")
+        else:
+            self.temp_dir = os.path.join(get_engine_base_dir(), "trinity_temp")
         os.makedirs(self.temp_dir, exist_ok=True)
+
+        # Pre-build the gain + limiter chain (static params, reused every call)
+        if PEDALBOARD_AVAILABLE:
+            self._main_board = Pedalboard([
+                Gain(gain_db=1.0),
+                Limiter(threshold_db=-0.5, release_ms=100.0),
+            ])
+        else:
+            self._main_board = None
+
+        # Cache key for last-built EQ chain to avoid rebuilding identical chains
+        self._last_eq_key = None
+        self._eq_board = None
 
         print(f"[{self.__class__.__name__}] Pedalboard: {'available' if PEDALBOARD_AVAILABLE else 'NOT FOUND'}")
 
@@ -99,13 +116,16 @@ class PedalboardMastering:
                 audio = self._apply_stereo_width(audio, width)
                 print(f"[{self.__class__.__name__}] Stereo width: {width * 100:.0f}%")
 
-            # ── Step 2: Harman Target Curve EQ ───────────────────────
-            harman_chain = self._build_harman_curve(highpass_hz, lowpass_hz, vocal_presence_db)
-            board_eq = Pedalboard(harman_chain)
-            audio = board_eq(audio, samplerate)
+            # ── Step 2: Harman Target Curve EQ (cached when params match) ───
+            eq_key = (round(highpass_hz, 1), round(lowpass_hz, 1), round(vocal_presence_db, 2))
+            if eq_key != self._last_eq_key:
+                harman_chain = self._build_harman_curve(highpass_hz, lowpass_hz, vocal_presence_db)
+                self._eq_board = Pedalboard(harman_chain)
+                self._last_eq_key = eq_key
+            audio = self._eq_board(audio, samplerate)
             print(f"[{self.__class__.__name__}] Harman curve EQ applied")
 
-            # ── Step 3: Peak normalization → Gain → Limiter ──────────
+            # ── Step 3: Peak normalization → Gain → Limiter ──────────────
             pre_peak = np.max(np.abs(audio))
             if pre_peak > 1e-6:
                 target_peak = 10 ** (-1.0 / 20.0)  # -1 dBFS
@@ -113,30 +133,29 @@ class PedalboardMastering:
                 norm_db = 20 * np.log10(target_peak / pre_peak)
                 print(f"[{self.__class__.__name__}] Peak normalized ({norm_db:+.1f}dB → -1 dBFS)")
 
-            board_main = Pedalboard([
-                Gain(gain_db=gain_db),
-                Limiter(
-                    threshold_db=limiter_threshold_db,
-                    release_ms=100.0,
-                ),
-            ])
-            audio = board_main(audio, samplerate)
+            # Update gain if it differs from default
+            if abs(gain_db - 1.0) > 0.01:
+                self._main_board[0] = Gain(gain_db=gain_db)
+            if abs(limiter_threshold_db - (-0.5)) > 0.01:
+                self._main_board[1] = Limiter(threshold_db=limiter_threshold_db, release_ms=100.0)
+            audio = self._main_board(audio, samplerate)
 
             # ── Step 4: Clip protection ──────────────────────────────
             peak = np.max(np.abs(audio))
             if peak > 1.0:
                 audio = audio / peak
-                print(f"[{self.__class__.__name__}] Clip protection engaged (peak: {peak:.3f})")
 
             # ── Step 5: Write output ─────────────────────────────────
-            with AudioFile(out_path, 'w', samplerate, audio.shape[0]) as f:
-                f.write(audio)
-
-            out_size = os.path.getsize(out_path)
-            out_peak = np.max(np.abs(audio))
-            out_rms = np.sqrt(np.mean(audio ** 2))
+            # Compute stats before writing to avoid re-reading the array
+            out_peak = float(np.max(np.abs(audio)))
+            out_rms = float(np.sqrt(np.mean(audio ** 2)))
             out_db = 20 * np.log10(out_rms) if out_rms > 0 else -100.0
 
+            with AudioFile(out_path, 'w', samplerate, audio.shape[0]) as f:
+                f.write(audio)
+            del audio  # Free immediately after write
+
+            out_size = os.path.getsize(out_path)
             print(f"[{self.__class__.__name__}] Mastered: {os.path.basename(out_path)} "
                   f"({out_size / 1024 / 1024:.1f} MB)")
             print(f"[{self.__class__.__name__}] Peak: {out_peak:.3f} | RMS: {out_db:.1f} dBFS")
