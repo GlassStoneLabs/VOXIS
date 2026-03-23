@@ -89,10 +89,21 @@ class VoiceRestoreWrapper:
         # Temperature lowered from 1.0 to reduce stochastic noise in diffusion outputs
         mode_steps = 48 if mode == "EXTREME" else 32
         mode_cfg   = 0.65 if mode == "EXTREME" else 0.50
-        self.steps        = steps_override if steps_override is not None else mode_steps
-        self.cfg_strength = cfg_override   if cfg_override   is not None else mode_cfg
+
+        self.steps = steps_override if steps_override is not None else mode_steps
+
+        # CFG ceiling: cap user-supplied override to a safe maximum per mode
+        # Higher CFG → more aggressive diffusion → more hallucination artifacts
+        max_cfg = 0.65 if mode == "EXTREME" else 0.55
+        raw_cfg = cfg_override if cfg_override is not None else mode_cfg
+        self.cfg_strength = min(raw_cfg, max_cfg)
+
         self.seed = -1
         self.temperature = 0.85
+
+        if cfg_override is not None and cfg_override > max_cfg:
+            print(f"[GS-CRYSTAL] CFG override {cfg_override:.2f} capped → {max_cfg:.2f} "
+                  f"(artifact reduction ceiling for {mode} mode)")
 
     def _initialize_model(self):
         if self._initialized:

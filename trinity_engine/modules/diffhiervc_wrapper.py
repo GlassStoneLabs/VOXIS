@@ -410,8 +410,13 @@ class DiffHierVCWrapper:
 
     @staticmethod
     def _crossfade_stitch(left: torch.Tensor, right: torch.Tensor,
-                          overlap_samples: int) -> torch.Tensor:
-        """Linear crossfade between two audio chunks."""
+                          overlap_samples: int,
+                          _fade_cache: dict = {}) -> torch.Tensor:
+        """
+        Equal-power cosine crossfade between two audio chunks.
+        cos²(t) + sin²(t) = 1 at every sample → zero energy dip,
+        no phase-cancellation artifacts at stitch boundaries.
+        """
         if overlap_samples <= 0:
             return torch.cat([left, right], dim=-1)
 
@@ -419,8 +424,10 @@ class DiffHierVCWrapper:
         if overlap <= 0:
             return torch.cat([left, right], dim=-1)
 
-        fade_out = torch.linspace(1.0, 0.0, overlap)
-        fade_in = torch.linspace(0.0, 1.0, overlap)
+        if overlap not in _fade_cache:
+            t = torch.linspace(0.0, torch.pi / 2, overlap)
+            _fade_cache[overlap] = (torch.cos(t), torch.sin(t))
+        fade_out, fade_in = _fade_cache[overlap]
 
         left_tail = left[..., -overlap:] * fade_out
         right_head = right[..., :overlap] * fade_in
