@@ -343,7 +343,8 @@ def install_deps():
 
     # Core audio
     pip_install("pedalboard", "numpy==1.23.5", "soundfile", "librosa==0.9.2",
-                "scipy>=1.14.1", "resampy==0.4.3", "soxr==1.0.0", "pydub==0.25.1")
+                "scipy>=1.14.1", "resampy==0.4.3", "soxr==1.0.0", "pydub==0.25.1",
+                "pyloudnorm")
     ok("Audio processing libs")
 
     # Source separation

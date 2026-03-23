@@ -85,12 +85,14 @@ class VoiceRestoreWrapper:
         self._onnx_enabled      = False
 
         # Configure intensity — explicit overrides take priority over mode defaults
+        # CFG tuned down to reduce hallucination artifacts while preserving restoration
+        # Temperature lowered from 1.0 to reduce stochastic noise in diffusion outputs
         mode_steps = 48 if mode == "EXTREME" else 32
-        mode_cfg   = 0.80 if mode == "EXTREME" else 0.70  # Aggression bump
+        mode_cfg   = 0.65 if mode == "EXTREME" else 0.50
         self.steps        = steps_override if steps_override is not None else mode_steps
         self.cfg_strength = cfg_override   if cfg_override   is not None else mode_cfg
         self.seed = -1
-        self.temperature = 1.0
+        self.temperature = 0.85
 
     def _initialize_model(self):
         if self._initialized:
@@ -463,9 +465,14 @@ class VoiceRestoreWrapper:
 
                 del audio_full
 
-                # Reassemble with linear crossfade — load only 2 chunks at a time
+                # Reassemble with equal-power cosine crossfade — prevents phase
+                # cancellation artifacts at chunk boundaries (linear fade causes
+                # energy dips; cosine preserves constant power across the stitch)
                 overlap_out = int(OVERLAP_SEC * out_sr)
                 assembled = torchaudio.load(chunk_paths[0])[0]
+
+                # Apply micro-fade (2ms) at chunk tail to kill DC offset clicks
+                micro_fade_samples = max(1, int(0.002 * out_sr))
 
                 # Cache fade curves to avoid recreating per-stitch
                 _fade_out = None
@@ -476,11 +483,17 @@ class VoiceRestoreWrapper:
                     ov = min(overlap_out, assembled.shape[-1], right.shape[-1])
                     if ov > 0:
                         if _fade_out is None or _fade_out.shape[0] != ov:
-                            _fade_out = torch.linspace(1.0, 0.0, ov)
-                            _fade_in = torch.linspace(0.0, 1.0, ov)
+                            # Equal-power cosine crossfade: cos²(t) + sin²(t) = 1
+                            t = torch.linspace(0.0, torch.pi / 2, ov)
+                            _fade_out = torch.cos(t)   # 1 → 0 (equal-power)
+                            _fade_in  = torch.sin(t)    # 0 → 1 (equal-power)
                         blended = assembled[..., -ov:] * _fade_out + right[..., :ov] * _fade_in
                         assembled = torch.cat([assembled[..., :-ov], blended, right[..., ov:]], dim=-1)
                     else:
+                        # No overlap — apply micro-fade to prevent click at boundary
+                        mf = min(micro_fade_samples, assembled.shape[-1], right.shape[-1])
+                        assembled[..., -mf:] *= torch.linspace(1.0, 0.0, mf)
+                        right[..., :mf] *= torch.linspace(0.0, 1.0, mf)
                         assembled = torch.cat([assembled, right], dim=-1)
                     del right
 

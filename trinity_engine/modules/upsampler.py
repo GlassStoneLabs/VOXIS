@@ -312,14 +312,17 @@ class TrinityUpscaler:
                       f"skipping AudioSR diffusion (Wn guard).")
                 return None
 
-            print(f"[{self.__class__.__name__}] Running GS-ASCEND diffusion ({self.ddim_steps} DDIM steps)...")
+            # guidance_scale lowered from 3.5 → 2.5 to reduce diffusion-induced
+            # high-frequency ringing and aliasing artifacts.  2.5 provides faithful
+            # bandwidth extension without hallucinating spectral content.
+            print(f"[{self.__class__.__name__}] Running GS-ASCEND diffusion ({self.ddim_steps} DDIM steps, guidance=2.5)...")
 
             with torch.inference_mode():
                 waveform = super_resolution(
                     self.audiosr_model,
                     input_path,
                     seed=42,
-                    guidance_scale=3.5,
+                    guidance_scale=2.5,
                     ddim_steps=self.ddim_steps,
                 )
 

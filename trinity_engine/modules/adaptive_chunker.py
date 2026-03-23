@@ -271,8 +271,11 @@ class AdaptiveChunker:
                           overlap_samples: int,
                           _fade_cache: dict = {}) -> torch.Tensor:
         """
-        Stitch two audio tensors with a linear crossfade over the overlap region.
-        Caches fade curves for reuse across chunks with the same overlap.
+        Stitch two audio tensors with an equal-power cosine crossfade.
+
+        Equal-power crossfade (cos²θ + sin²θ = 1) preserves constant energy
+        across the stitch region, eliminating the ~3 dB dip that linear
+        crossfades produce and preventing phase-cancellation artifacts.
 
         left:   (..., T_left)
         right:  (..., T_right)
@@ -290,10 +293,10 @@ class AdaptiveChunker:
 
         # Reuse cached fade curves when overlap length matches
         if overlap not in _fade_cache:
-            _fade_cache[overlap] = (
-                torch.linspace(1.0, 0.0, overlap),
-                torch.linspace(0.0, 1.0, overlap),
-            )
+            # Equal-power cosine crossfade: cos(t) fades out, sin(t) fades in
+            # cos²(t) + sin²(t) = 1 at every sample → zero energy fluctuation
+            t = torch.linspace(0.0, torch.pi / 2, overlap)
+            _fade_cache[overlap] = (torch.cos(t), torch.sin(t))
         fade_out, fade_in = _fade_cache[overlap]
 
         # Apply crossfade to the overlap region
