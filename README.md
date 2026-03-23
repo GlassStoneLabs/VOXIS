@@ -1,6 +1,6 @@
 # VOXIS 4.0 DENSE
 
-**Powered by Trinity V8.1 | Built by Glass Stone LLC**
+**Powered by Trinity V8.2 | Built by Glass Stone LLC**
 **CEO: Gabriel B. Rodriguez | © 2026**
 The code was assisted by Claude 4.6 opus, and Google Gemini was used to prototype the UI. The majority of the development was done manually.
 
@@ -8,14 +8,14 @@ The code was assisted by Claude 4.6 opus, and Google Gemini was used to prototyp
 
 Voxis 4.0 DENSE is a professional-grade desktop application for audio restoration and
 enhancement. It transforms degraded, low-quality audio into clean, high-resolution
-stereo output through a multi-stage AI pipeline driven by the Trinity V8.1 engine.
+stereo output through a multi-stage AI pipeline driven by the Trinity V8.2 engine.
 
 Designed following strict Bauhaus UI principles: form follows function, primary palette,
 geometric grid, zero ornament.
 
 ---
 
-## The Trinity V8.1 Pipeline
+## The Trinity V8.2 Pipeline
 
 | Step | Module | Technology |
 |------|--------|------------|
@@ -141,7 +141,7 @@ Voxis V4.0.0 DENSE
 │   │   ├── App.tsx            Bauhaus UI — 5 inline modules
 │   │   └── Bauhaus.css        Design system tokens and layout
 │   └── resources/bin/         trinity_v8_core binary (not in git — build or download)
-├── trinity_engine/            Python Backend — Trinity V8.1 Engine
+├── trinity_engine/            Python Backend — Trinity V8.2 Engine
 │   ├── trinity_core.py        Pipeline orchestrator
 │   └── modules/
 │       ├── ingest.py          FFmpeg decode/export

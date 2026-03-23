@@ -2,7 +2,7 @@ VOXIS 4.0 DENSE — PROPRIETARY SOFTWARE LICENSE
 ===============================================
 Product   : Voxis 4.0 DENSE
 Version   : 4.0.0
-Engine    : Trinity V8.1
+Engine    : Trinity V8.2
 Company   : Glass Stone LLC
 CEO       : Gabriel B. Rodriguez
 Location  : PA, USA
@@ -14,7 +14,7 @@ Copyright © 2026 Glass Stone LLC. All Rights Reserved.
 ────────────────────────────────────────────────────────────────────────────────
 NOTICE TO USERS
 
-This software, Voxis 4.0 DENSE ("the Software"), including the Trinity V8.1 engine
+This software, Voxis 4.0 DENSE ("the Software"), including the Trinity V8.2 engine
 and all associated audio processing pipeline components, is the exclusive proprietary
 property of Glass Stone LLC. Unauthorized copying, distribution, modification,
 reverse-engineering, or use of this software, in whole or in part, is strictly
@@ -53,5 +53,5 @@ GOVERNING LAW: Commonwealth of Pennsylvania, United States of America.
 
 ────────────────────────────────────────────────────────────────────────────────
 Glass Stone LLC |  PA | CEO: Gabriel B. Rodriguez | © 2026
-VOXIS 4.0 DENSE — Powered by Trinity V8.1
+VOXIS 4.0 DENSE — Powered by Trinity V8.2
 ────────────────────────────────────────────────────────────────────────────────

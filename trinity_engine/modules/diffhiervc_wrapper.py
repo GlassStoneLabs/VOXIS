@@ -172,7 +172,7 @@ class DiffHierVCWrapper:
         self._vocoder.eval()
         self._vocoder.dec.remove_weight_norm()
 
-        print(f"[GS-REFINE] ✓ All models loaded on {self._device.upper()}")
+        print(f"[GS-REFINE] [OK] All models loaded on {self._device.upper()}")
 
     # ── F0 Extraction ────────────────────────────────────────────────────────
 
@@ -335,7 +335,7 @@ class DiffHierVCWrapper:
         torchaudio.save(out_path, refined, orig_sr)
 
         out_size = os.path.getsize(out_path) / (1024 * 1024)
-        print(f"[GS-REFINE] ✓ Refined vocal: {refined.shape[-1]/orig_sr:.1f}s | "
+        print(f"[GS-REFINE] [OK] Refined vocal: {refined.shape[-1]/orig_sr:.1f}s | "
               f"{orig_sr}Hz | {out_size:.1f}MB → {os.path.basename(out_path)}")
 
         # Free GPU memory

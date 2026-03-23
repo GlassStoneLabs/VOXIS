@@ -1,6 +1,6 @@
 # VOXIS 4.0 DENSE — Installation Guide
 
-**Professional Audio Restoration · Trinity V8.1 Engine**
+**Professional Audio Restoration · Trinity V8.2 Engine**
 Copyright © 2026 Glass Stone LLC · CEO: Gabriel B. Rodriguez
 
 ---
@@ -201,4 +201,4 @@ See the full technical diagram: [`docs/architecture.svg`](docs/architecture.svg)
 
 ---
 
-**Built by Glass Stone LLC · Powered by Trinity V8.1**
+**Built by Glass Stone LLC · Powered by Trinity V8.2**

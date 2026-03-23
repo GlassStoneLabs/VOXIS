@@ -275,7 +275,7 @@ class TrinityV8Desktop:
                 ),
                 f">> {tag} [7/7] Mastering & Auto-EQ...",
             )
-            print(f">> {tag} ✓ Chunk complete → {os.path.basename(mastered_paths[ci])}")
+            print(f">> {tag} [OK] Chunk complete → {os.path.basename(mastered_paths[ci])}")
         self._free_model('_limiter', 'Master')
 
         return mastered_paths
@@ -350,7 +350,16 @@ class TrinityV8Desktop:
 
         # Generate cache key from file content + params
         job_key = self.cache.make_job_key(input_path, params)
-        print(f">> [CACHE] Job Key: {job_key}")
+
+        # Conditional Caching (Only cache if input > 250MB)
+        input_size_mb = os.path.getsize(input_path) / (1024 * 1024)
+        if input_size_mb < 250.0:
+            self.cache.enabled = False
+            print(f">> [CACHE] Input < 250MB ({input_size_mb:.1f}MB) — SSD caching disabled for speed.")
+        else:
+            self.cache.enabled = True
+            print(f">> [CACHE] Input >= 250MB ({input_size_mb:.1f}MB) — SSD caching active.")
+            print(f">> [CACHE] Job Key: {job_key}")
 
         try:
             # ── Device info (lazy — imports torch only now) ─────────────
@@ -405,7 +414,7 @@ class TrinityV8Desktop:
                 total = time.perf_counter() - pipeline_start
                 self.cache.summary()
                 print(f"\n{'='*60}")
-                print(f"  ✓ Restoration Complete ({num} chunks) → {os.path.basename(output_path)}")
+                print(f"  [OK] Restoration Complete ({num} chunks) → {os.path.basename(output_path)}")
                 print(f"  Total Pipeline Time: {total:.2f}s")
                 print(f"{'='*60}\n")
                 return True
@@ -502,7 +511,7 @@ class TrinityV8Desktop:
             total = time.perf_counter() - pipeline_start
             self.cache.summary()
             print(f"\n{'='*60}")
-            print(f"  ✓ Restoration Complete → {os.path.basename(output_path)}")
+            print(f"  [OK] Restoration Complete → {os.path.basename(output_path)}")
             print(f"  Total Pipeline Time: {total:.2f}s")
             print(f"{'='*60}\n")
             return True
@@ -552,6 +561,10 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--download-models":
         from model_downloader import download_all_models
         result = download_all_models()
+        sys.exit(0 if result["success"] else 1)
+    elif len(sys.argv) > 1 and sys.argv[1] == "--update-models":
+        from model_downloader import update_all_models
+        result = update_all_models()
         sys.exit(0 if result["success"] else 1)
 
     parser = argparse.ArgumentParser(

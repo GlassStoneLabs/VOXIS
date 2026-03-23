@@ -22,36 +22,28 @@ import torch
 import torchaudio
 
 from .path_utils import get_engine_base_dir
+from .device_utils import DeviceOptimizer
 
 
 # ── Chunk sizing presets (all in seconds) ─────────────────────────────────────
 
-MIN_CHUNK_SEC  = 30    # Minimum chunk length
-MAX_CHUNK_SEC  = 300   # Maximum chunk length (5 minutes)
-NO_CHUNK_THRESHOLD = 300  # Files under 5 min → no chunking
+MIN_CHUNK_SEC  = 60    # Fixed 60s chunk length
+NO_CHUNK_THRESHOLD = 300  # Default duration threshold (5 min)
 
-# Overlap scales with chunk size for seamless crossfade
-MIN_OVERLAP_SEC = 3
-MAX_OVERLAP_SEC = 10
-
-
-def compute_chunk_params(duration_sec: float, ram_available_gb: float = 8.0) -> dict:
+def compute_chunk_params(wav_path: str, duration_sec: float, ram_available_gb: float = 8.0) -> dict:
     """
-    Compute optimal chunk size and overlap for a given audio duration.
-
-    Adaptive logic:
-      < 5min:    No chunking (single pass)
-      5–15min:   60s chunks, 3s overlap
-      15–30min:  120s chunks, 5s overlap
-      30–60min:  180s chunks, 8s overlap
-      60min+:    300s chunks, 10s overlap
-
-    RAM adjustment: If available RAM < 4GB, halve chunk size.
-
-    Returns:
-        dict with keys: chunk_sec, overlap_sec, num_chunks, should_chunk
+    Compute optimal chunk size based on system resources and file size.
+    Trigger chunking if file is over 200MB OR if duration > 5 min.
+    Always uses 60-second chunks with small overlap for crossfading.
     """
-    if duration_sec <= NO_CHUNK_THRESHOLD:
+    file_size_mb = os.path.getsize(wav_path) / (1024 * 1024)
+    should_chunk = file_size_mb > 200.0 or duration_sec > NO_CHUNK_THRESHOLD
+    
+    # If system RAM is critically low (< 4GB), force chunking regardless of size
+    if ram_available_gb < 4.0 and duration_sec > 60:
+        should_chunk = True
+
+    if not should_chunk:
         return {
             "chunk_sec":    duration_sec,
             "overlap_sec":  0,
@@ -59,28 +51,8 @@ def compute_chunk_params(duration_sec: float, ram_available_gb: float = 8.0) -> 
             "should_chunk": False,
         }
 
-    # Base chunk sizing by duration tier
-    if duration_sec <= 900:       # 5–15 min
-        chunk_sec   = 60
-        overlap_sec = 3
-    elif duration_sec <= 1800:    # 15–30 min
-        chunk_sec   = 120
-        overlap_sec = 5
-    elif duration_sec <= 3600:    # 30–60 min
-        chunk_sec   = 180
-        overlap_sec = 8
-    else:                         # 60 min+
-        chunk_sec   = 300
-        overlap_sec = 10
-
-    # RAM pressure: halve chunk size if low on memory
-    if ram_available_gb < 4.0:
-        chunk_sec   = max(MIN_CHUNK_SEC, chunk_sec // 2)
-        overlap_sec = max(MIN_OVERLAP_SEC, overlap_sec // 2)
-
-    # Clamp to range
-    chunk_sec   = max(MIN_CHUNK_SEC, min(MAX_CHUNK_SEC, chunk_sec))
-    overlap_sec = max(MIN_OVERLAP_SEC, min(MAX_OVERLAP_SEC, overlap_sec))
+    chunk_sec = MIN_CHUNK_SEC
+    overlap_sec = 5  # 5 second overlap for smooth stitching
 
     # Compute number of chunks
     stride = chunk_sec - overlap_sec
@@ -108,10 +80,16 @@ class AdaptiveChunker:
             final = chunker.assemble(processed_chunks, output_path)
     """
 
-    def __init__(self, job_id: str = None):
+    def __init__(self, job_id: str = None, temp_manager=None):
         self.job_id = job_id or str(uuid.uuid4())[:12]
-        base_dir = get_engine_base_dir()
-        self.chunks_dir = os.path.join(base_dir, "chunks", self.job_id)
+        self._temp_manager = temp_manager
+        if temp_manager:
+            # Use the structured .temp/<job_id>/chunks/ directory
+            self.chunks_dir = temp_manager.get_stage_dir("chunks")
+        else:
+            base_dir = get_engine_base_dir()
+            # Fallback: standalone .temp/<own_job_id>/ for backward compat
+            self.chunks_dir = os.path.join(base_dir, ".temp", self.job_id)
         os.makedirs(self.chunks_dir, exist_ok=True)
         self._metadata = {}
 
@@ -138,9 +116,14 @@ class AdaptiveChunker:
         channels = info.num_channels
         duration_sec = num_frames / sr
 
-        print(f"[AdaptiveChunker] Input: {duration_sec:.1f}s | {sr}Hz | {channels}ch")
+        # Get system memory directly or use passed ram_gb
+        mem = DeviceOptimizer.get_memory_info()
+        available_ram = mem.get("system_ram_available_gb", ram_gb)
 
-        params = compute_chunk_params(duration_sec, ram_gb)
+        file_size_mb = os.path.getsize(wav_path) / (1024 * 1024)
+        print(f"[AdaptiveChunker] Input: {duration_sec:.1f}s | {sr}Hz | {channels}ch | ~{file_size_mb:.1f}MB")
+
+        params = compute_chunk_params(wav_path, duration_sec, available_ram)
 
         if not params["should_chunk"]:
             print(f"[AdaptiveChunker] Duration under {NO_CHUNK_THRESHOLD}s — single pass (no chunking)")
@@ -278,16 +261,18 @@ class AdaptiveChunker:
         out_size = os.path.getsize(output_path) / (1024 * 1024)
         duration = assembled.shape[-1] / sr
 
-        print(f"[AdaptiveChunker] ✓ Assembly complete: {duration:.1f}s | "
+        print(f"[AdaptiveChunker] [OK] Assembly complete: {duration:.1f}s | "
               f"{sr}Hz | {out_size:.1f} MB → {output_path}")
 
         return output_path
 
     @staticmethod
     def _crossfade_stitch(left: torch.Tensor, right: torch.Tensor,
-                          overlap_samples: int) -> torch.Tensor:
+                          overlap_samples: int,
+                          _fade_cache: dict = {}) -> torch.Tensor:
         """
         Stitch two audio tensors with a linear crossfade over the overlap region.
+        Caches fade curves for reuse across chunks with the same overlap.
 
         left:   (..., T_left)
         right:  (..., T_right)
@@ -303,9 +288,13 @@ class AdaptiveChunker:
         if overlap <= 0:
             return torch.cat([left, right], dim=-1)
 
-        # Build fade curves
-        fade_out = torch.linspace(1.0, 0.0, overlap)  # left fades out
-        fade_in  = torch.linspace(0.0, 1.0, overlap)  # right fades in
+        # Reuse cached fade curves when overlap length matches
+        if overlap not in _fade_cache:
+            _fade_cache[overlap] = (
+                torch.linspace(1.0, 0.0, overlap),
+                torch.linspace(0.0, 1.0, overlap),
+            )
+        fade_out, fade_in = _fade_cache[overlap]
 
         # Apply crossfade to the overlap region
         left_tail    = left[..., -overlap:] * fade_out

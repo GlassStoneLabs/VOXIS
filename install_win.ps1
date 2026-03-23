@@ -2,7 +2,7 @@
 #  VOXIS 4.0 DENSE — Windows Installer
 #  Copyright © 2026 Glass Stone LLC. All Rights Reserved.
 #  CEO: Gabriel B. Rodriguez
-#  Powered by Trinity V8.1
+#  Powered by Trinity V8.2
 # ═══════════════════════════════════════════════════════════════════
 #
 #  This installer:
@@ -28,7 +28,7 @@ function Banner {
     Write-Host ""
     Write-Host "  ╔══════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
     Write-Host "  ║  VOXIS 4.0 DENSE — Windows Installer                   ║" -ForegroundColor Cyan
-    Write-Host "  ║  Powered by Trinity V8.1                                ║" -ForegroundColor Cyan
+    Write-Host "  ║  Powered by Trinity V8.2                                ║" -ForegroundColor Cyan
     Write-Host "  ║  © 2026 Glass Stone LLC — CEO: Gabriel B. Rodriguez     ║" -ForegroundColor Cyan
     Write-Host "  ╚══════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
     Write-Host ""
@@ -160,7 +160,7 @@ if (Test-Path $distroModels) {
 }
 
 # ── Step 5: Verify Pipeline ─────────────────────────────────────
-Step 5 $TOTAL "Verifying Trinity V8.1 Pipeline" "Testing all module imports..."
+Step 5 $TOTAL "Verifying Trinity V8.2 Pipeline" "Testing all module imports..."
 
 Set-Location $ENGINE_DIR
 $testResult = python -c @"
@@ -210,7 +210,7 @@ title VOXIS 4.0 DENSE — Glass Stone LLC
 cd /d "%~dp0"
 call venv\Scripts\activate.bat
 set PYTORCH_ENABLE_MPS_FALLBACK=1
-echo [VOXIS] Starting Trinity V8.1 Engine...
+echo [VOXIS] Starting Trinity V8.2 Engine...
 if exist "app\package.json" (
     cd app
     npm run tauri dev

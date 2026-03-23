@@ -99,9 +99,13 @@ class AudioDecoder:
     Cross-platform: macOS (M-series), Windows (x86_64), Linux.
     """
 
-    def __init__(self, temp_dir=None):
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        self.temp_dir = temp_dir or os.path.join(base_dir, "trinity_temp")
+    def __init__(self, temp_dir=None, temp_manager=None):
+        self._temp_manager = temp_manager
+        if temp_manager:
+            self.temp_dir = temp_manager.get_stage_dir("ingest")
+        else:
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            self.temp_dir = temp_dir or os.path.join(base_dir, "trinity_temp")
         os.makedirs(self.temp_dir, exist_ok=True)
 
         # Resolve binaries once at init
@@ -216,14 +220,29 @@ class AudioDecoder:
         job_id = str(uuid.uuid4())[:8]
         output_wav = os.path.join(self.temp_dir, f"ingest_{job_id}.wav")
 
+        # ── Fast-Path for perfect WAV files ──
+        if probe_info.get("probed"):
+            if (
+                probe_info.get("audio_codec") == "pcm_s16le"
+                and probe_info.get("audio_sample_rate") == TARGET_SAMPLE_RATE
+                and probe_info.get("audio_channels") == TARGET_CHANNELS
+                and not probe_info.get("has_video")
+            ):
+                print(f"[{self.__class__.__name__}] Fast-path: Input is already formatted perfectly. Bypassing FFmpeg.")
+                shutil.copy2(input_path, output_wav)
+                return output_wav
+
         # Build FFmpeg command
         cmd = [
             self.ffmpeg,
             "-y",                     # Overwrite
             "-hide_banner",           # Less noise
             "-loglevel", "error",     # Only errors
+            "-hwaccel", "auto",       # Attempt hardware decoding
+            "-threads", "0",          # Use optimal threads
             "-i", input_path,         # Input
             "-vn",                    # Strip video
+            "-sn",                    # Strip subtitles
             "-acodec", TARGET_BIT_DEPTH,
             "-ar", str(TARGET_SAMPLE_RATE),
             "-ac", str(TARGET_CHANNELS),
@@ -245,7 +264,7 @@ class AudioDecoder:
                 raise RuntimeError("FFmpeg produced no output file")
 
             out_size = os.path.getsize(output_wav)
-            print(f"[{self.__class__.__name__}] ✓ Decode complete: {output_wav} ({out_size / 1024 / 1024:.1f} MB)")
+            print(f"[{self.__class__.__name__}] [OK] Decode complete: {output_wav} ({out_size / 1024 / 1024:.1f} MB)")
             return output_wav
 
         except subprocess.TimeoutExpired:
@@ -259,56 +278,109 @@ class AudioDecoder:
                         output_path: str, fmt: str = "WAV") -> bool:
         """
         Export the mastered audio to the final output path.
-        - If source was video: mux treated audio back into the video container.
-        - If FLAC: re-encode to 24-bit FLAC.
-        - Otherwise: copy WAV directly.
+        - If source was video: mux treated audio back into the video container, 
+          preserving all other streams (subtitles, metadata, chapters).
+        - If high-fidelity format requested: re-encode to ALAC, FLAC, WAV24, or WAV32.
         Returns True on success.
         """
-        print(f"[{self.__class__.__name__}] Exporting ({fmt})...")
+        fmt_upper = fmt.upper()
+        print(f"[{self.__class__.__name__}] Exporting ({fmt_upper})...")
 
         ext_in = os.path.splitext(original_input_path)[1].lower()
         is_video = ext_in in {'.mp4', '.mov', '.mkv', '.avi', '.webm'}
 
         # ── Video → Mux audio back into original container ───────────
         if is_video:
-            print(f"[{self.__class__.__name__}] Video source detected — muxing restored audio...")
+            print(f"[{self.__class__.__name__}] Video source detected — remuxing with all original streams preserved...")
             cmd = [
                 self.ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
-                "-i", original_input_path,
-                "-i", processed_wav_path,
-                "-c:v", "copy",
-                "-map", "0:v:0",
-                "-map", "1:a:0",
-                "-shortest",
+                "-i", original_input_path,     # Input 0: Original Video
+                "-i", processed_wav_path,      # Input 1: Restored Audio
+                "-map", "0",                   # Map all streams from original
+                "-map", "-0:a",                # Drop all audio streams from original
+                "-map", "1:a:0",               # Map the new audio stream
+                "-c", "copy",                  # Copy all mapped streams without re-encoding...
+                "-c:a:0", "aac",               # ...except the new audio, encoded to AAC
+                "-b:a", "320k",                # 320kbps high-quality AAC
+                "-shortest",                   # Truncate to the shortest stream
                 output_path,
             ]
             try:
                 subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=600)
-                print(f"[{self.__class__.__name__}] ✓ Video mux complete → {output_path}")
+                print(f"[{self.__class__.__name__}] [OK] Video remux complete → {output_path}")
                 return True
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-                print(f"[{self.__class__.__name__}] Video mux failed: {e}. Falling back to audio-only.")
+                print(f"[{self.__class__.__name__}] Video remux failed: {e}. Falling back to audio-only.")
+                output_path = os.path.splitext(output_path)[0] + f".{fmt_upper.lower()}"
 
         # ── FLAC export ──────────────────────────────────────────────
-        if fmt.upper() == "FLAC":
-            flac_path = os.path.splitext(output_path)[0] + ".flac"
+        if fmt_upper == "FLAC":
+            flac_path = os.path.splitext(output_path)[0] + ".flac" if is_video else output_path
             cmd = [
                 self.ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
                 "-i", processed_wav_path,
                 "-c:a", "flac",
-                "-sample_fmt", "s32",  # 24-bit FLAC
+                "-sample_fmt", "s32",  # 24-bit FLAC (ffmpeg maps s32 to 24-bit in FLAC context)
                 flac_path,
             ]
             try:
                 subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=300)
-                print(f"[{self.__class__.__name__}] ✓ FLAC export → {flac_path}")
+                print(f"[{self.__class__.__name__}] [OK] FLAC export → {flac_path}")
                 return True
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
                 print(f"[{self.__class__.__name__}] FLAC encode failed, falling back to WAV.")
 
+        # ── ALAC export ──────────────────────────────────────────────
+        elif fmt_upper == "ALAC":
+            alac_path = os.path.splitext(output_path)[0] + ".m4a" if is_video else output_path
+            cmd = [
+                self.ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
+                "-i", processed_wav_path,
+                "-c:a", "alac",
+                alac_path,
+            ]
+            try:
+                subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=300)
+                print(f"[{self.__class__.__name__}] [OK] ALAC export → {alac_path}")
+                return True
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                print(f"[{self.__class__.__name__}] ALAC encode failed, falling back to WAV.")
+
+        # ── WAV24 (24-bit PCM) export ────────────────────────────────
+        elif fmt_upper == "WAV24":
+            wav24_path = os.path.splitext(output_path)[0] + "_24bit.wav" if is_video else output_path
+            cmd = [
+                self.ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
+                "-i", processed_wav_path,
+                "-c:a", "pcm_s24le",
+                wav24_path,
+            ]
+            try:
+                subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=300)
+                print(f"[{self.__class__.__name__}] [OK] WAV 24-bit export → {wav24_path}")
+                return True
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                print(f"[{self.__class__.__name__}] WAV24 encode failed, falling back to standard WAV.")
+
+        # ── WAV32 (32-bit Float PCM) export ──────────────────────────
+        elif fmt_upper == "WAV32":
+            wav32_path = os.path.splitext(output_path)[0] + "_32bit.wav" if is_video else output_path
+            cmd = [
+                self.ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
+                "-i", processed_wav_path,
+                "-c:a", "pcm_f32le",
+                wav32_path,
+            ]
+            try:
+                subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=300)
+                print(f"[{self.__class__.__name__}] [OK] WAV 32-bit Float export → {wav32_path}")
+                return True
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                print(f"[{self.__class__.__name__}] WAV32 encode failed, falling back to standard WAV.")
+
         # ── MP3 export ───────────────────────────────────────────────
-        if fmt.upper() == "MP3":
-            mp3_path = os.path.splitext(output_path)[0] + ".mp3"
+        elif fmt_upper == "MP3":
+            mp3_path = os.path.splitext(output_path)[0] + ".mp3" if is_video else output_path
             cmd = [
                 self.ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
                 "-i", processed_wav_path,
@@ -319,12 +391,13 @@ class AudioDecoder:
             ]
             try:
                 subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=300)
-                print(f"[{self.__class__.__name__}] ✓ MP3 export (320kbps) → {mp3_path}")
+                print(f"[{self.__class__.__name__}] [OK] MP3 export (320kbps) → {mp3_path}")
                 return True
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
                 print(f"[{self.__class__.__name__}] MP3 encode failed, falling back to WAV.")
 
-        # ── WAV fallback ─────────────────────────────────────────────
-        shutil.copy2(processed_wav_path, output_path)
-        print(f"[{self.__class__.__name__}] ✓ WAV export → {output_path}")
+        # ── WAV (Standard 16-bit) fallback ───────────────────────────
+        wav_path = os.path.splitext(output_path)[0] + ".wav" if is_video else output_path
+        shutil.copy2(processed_wav_path, wav_path)
+        print(f"[{self.__class__.__name__}] [OK] WAV export → {wav_path}")
         return True

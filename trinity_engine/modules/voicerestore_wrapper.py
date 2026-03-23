@@ -86,7 +86,7 @@ class VoiceRestoreWrapper:
 
         # Configure intensity — explicit overrides take priority over mode defaults
         mode_steps = 48 if mode == "EXTREME" else 32
-        mode_cfg   = 0.7 if mode == "EXTREME" else 0.65
+        mode_cfg   = 0.80 if mode == "EXTREME" else 0.70  # Aggression bump
         self.steps        = steps_override if steps_override is not None else mode_steps
         self.cfg_strength = cfg_override   if cfg_override   is not None else mode_cfg
         self.seed = -1
@@ -216,7 +216,7 @@ class VoiceRestoreWrapper:
                     for attr in ("bigvgan", "vocoder", "bigvgan_model"):
                         if hasattr(vr_sub, attr):
                             setattr(vr_sub, attr, wrapped_vocoder)
-                print("[GS-CRYSTAL] ✓ GS-VOCODER running on Neural Engine (CoreML)")
+                print("[GS-CRYSTAL] [OK] GS-VOCODER running on Neural Engine (CoreML)")
                 # If we were on CPU and CoreML vocoder succeeded, promote to MPS
                 if str(self.raw_device) == "mps" and str(self.device) == "cpu":
                     self.device = "mps"
@@ -265,7 +265,7 @@ class VoiceRestoreWrapper:
             if coreml_full:
                 self._coreml_full_model = coreml_full
                 self._coreml_enabled    = True
-                print(f"[GS-CRYSTAL] ✓ Full GS-CRYSTAL on Neural Engine "
+                print(f"[GS-CRYSTAL] [OK] Full GS-CRYSTAL on Neural Engine "
                       f"(steps={_steps}, CFG={_cfg})")
             else:
                 print("[GS-CRYSTAL] Full model conversion not available — "
@@ -330,7 +330,7 @@ class VoiceRestoreWrapper:
                             setattr(vr_sub, attr, wrapped)
                 self._onnx_session = onnx_session
                 self._onnx_enabled = True
-                print(f"[GS-CRYSTAL] ✓ GS-VOCODER on {provider_name} (ONNX)")
+                print(f"[GS-CRYSTAL] [OK] GS-VOCODER on {provider_name} (ONNX)")
         except Exception as e:
             print(f"[GS-CRYSTAL] GS-VOCODER ONNX export skipped: {e}")
 
@@ -415,7 +415,7 @@ class VoiceRestoreWrapper:
                     restored_wav = restored_wav.unsqueeze(0)
                 torchaudio.save(out_path, restored_wav.cpu(), out_sr)
                 del restored_wav
-                print(f"[{self.__class__.__name__}] ✓ Restoration saved @ {out_sr}Hz: {os.path.basename(out_path)}")
+                print(f"[{self.__class__.__name__}] [OK] Restoration saved @ {out_sr}Hz: {os.path.basename(out_path)}")
             else:
                 # Chunked pass — stream each chunk to disk to avoid accumulating in RAM
                 chunk_samples = int(MAX_CHUNK_SEC * orig_sr)
@@ -483,7 +483,7 @@ class VoiceRestoreWrapper:
 
                 torchaudio.save(out_path, assembled, out_sr)
                 del assembled
-                print(f"[{self.__class__.__name__}] ✓ Restoration saved @ {out_sr}Hz: {os.path.basename(out_path)}")
+                print(f"[{self.__class__.__name__}] [OK] Restoration saved @ {out_sr}Hz: {os.path.basename(out_path)}")
 
                 # Clean up chunk temp files
                 import shutil

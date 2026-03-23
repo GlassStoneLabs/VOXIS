@@ -87,3 +87,7 @@ VOXIS_4.0_DENSE_macOS.zip
 # Test & Misc
 GlassStoneLabs-Enron-test*/
 .claude/
+app/src-tauri/binaries/
+trinity_engine/coreml/
+app/src-tauri/binaries
+trinity_engine/coreml

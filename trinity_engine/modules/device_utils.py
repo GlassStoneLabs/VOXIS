@@ -144,7 +144,7 @@ class DeviceOptimizer:
         @contextlib.contextmanager
         def _ctx():
             cls._force_cpu = True
-            print("[DeviceOptimizer] ⚠ FORCED CPU MODE ACTIVE")
+            print("[DeviceOptimizer] [!] FORCED CPU MODE ACTIVE")
             try:
                 yield
             finally:

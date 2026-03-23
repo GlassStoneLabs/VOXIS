@@ -1,15 +1,18 @@
-// VOXIS V4.0.0 DENSE — Bauhaus Desktop UI
+// VOXIS V4.0.0 DENSE — Bauhaus Desktop UI (Tauri)
 // Copyright © 2026 Glass Stone LLC. All Rights Reserved.
-// CEO: Gabriel B. Rodriguez | Powered by Trinity V8.1
+// CEO: Gabriel B. Rodriguez | Powered by Trinity V8.2
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { invoke } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import './Bauhaus.css';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 type ProcessingMode = 'QUICK' | 'STANDARD' | 'EXTREME';
 type UpscaleFactor  = 1 | 2 | 4;
-type OutputFormat   = 'WAV' | 'FLAC' | 'MP3';
+type OutputFormat   = 'WAV' | 'WAV24' | 'WAV32' | 'FLAC' | 'ALAC' | 'MP3';
 type PipelineStatus = 'idle' | 'running' | 'done' | 'error';
 
 interface Step {
@@ -80,6 +83,63 @@ const Logo = () => (
 );
 
 // ── App ──────────────────────────────────────────────────────────────────────
+
+const STAGE_COLORS = ['var(--red)', 'var(--blue)', 'var(--yellow)', 'var(--black)', 'var(--red)', 'var(--blue)', 'var(--black)'];
+
+const AnimatedStageProgress = ({ currentStep }: { currentStep: number }) => {
+  return (
+    <div className="stage-progress-container">
+      {STEPS.map((step, i) => {
+        const isActive = currentStep === step.id;
+        const isDone = currentStep > step.id;
+        const isWaiting = currentStep < step.id;
+        const color = STAGE_COLORS[i % STAGE_COLORS.length];
+
+        return (
+          <motion.div
+            key={step.id}
+            className={`stage-block ${isActive ? 'active' : ''} ${isDone ? 'done' : ''}`}
+            initial={{ opacity: 0, scale: 0.8, y: 20 }}
+            animate={{ 
+              opacity: isWaiting ? 0.25 : 1, 
+              scale: isActive ? 1.03 : 1,
+              y: 0,
+            }}
+            style={{ 
+              borderColor: isActive || isDone ? color : 'var(--gray-2)',
+              backgroundColor: isActive ? 'var(--white)' : isDone ? 'var(--gray-1)' : 'transparent'
+            }}
+            transition={{ type: 'spring', stiffness: 300, damping: 20, delay: i * 0.05 }}
+          >
+            <div className="stage-block-num" style={{ color: isActive || isDone ? color : 'var(--gray-3)' }}>
+              {step.id}
+            </div>
+            <div className="stage-block-content">
+              <div className="stage-block-title">{step.label}</div>
+              <div className="stage-block-sub">{step.sublabel}</div>
+            </div>
+            {isActive && (
+              <motion.div 
+                className="stage-block-glow"
+                style={{ backgroundColor: color }}
+                animate={{ opacity: [0.1, 0.3, 0.1] }}
+                transition={{ repeat: Infinity, duration: 1.5 }}
+              />
+            )}
+            {isDone && (
+              <div className="stage-lock">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="3">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              </div>
+            )}
+          </motion.div>
+        );
+      })}
+    </div>
+  );
+};
+
 export default function App() {
   // ── State ───────────────────────────────────────────────────────────────
   const [inputFile,      setInputFile]      = useState<string | null>(null);
@@ -105,42 +165,42 @@ export default function App() {
   const [autoHPF,   setAutoHPF]   = useState<number | null>(null);
   const [autoVocal, setAutoVocal] = useState<number | null>(null);
 
-  // Update notification
-  const [updateStatus, setUpdateStatus] = useState<{ type: string; version?: string; percent?: number } | null>(null);
-
   // Input audio preview
   const [inputPreviewUrl,    setInputPreviewUrl]    = useState<string | null>(null);
   const [inputIsPlaying,     setInputIsPlaying]     = useState(false);
   const [inputAudioTime,     setInputAudioTime]     = useState(0);
   const [inputAudioDuration, setInputAudioDuration] = useState(0);
 
+  // Output Playback State
+  const [outputPreviewUrl,    setOutputPreviewUrl]    = useState<string | null>(null);
+  const [outputIsPlaying,     setOutputIsPlaying]     = useState(false);
+  const [outputAudioTime,     setOutputAudioTime]     = useState(0);
+  const [outputAudioDuration, setOutputAudioDuration] = useState(0);
+
   // Output state
-  const [_previewUrl,  setPreviewUrl]  = useState<string | null>(null);
   const [saveStatus,   setSaveStatus]  = useState<string | null>(null);
-  // _previewUrl reserved for future waveform rendering
-  void _previewUrl;
 
   // Refs
   const logBoxRef      = useRef<HTMLDivElement>(null);
   const inputAudioRef  = useRef<HTMLAudioElement>(null);
+  const outputAudioRef = useRef<HTMLAudioElement>(null);
   const mountedRef     = useRef(true);
   const timerRef       = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastLogRef     = useRef<number>(0);
   const startTimeRef   = useRef<number>(0);
+  const unlistenLogRef = useRef<UnlistenFn | null>(null);
+  const unlistenDoneRef = useRef<UnlistenFn | null>(null);
 
   // ── Derived ──────────────────────────────────────────────────────────────
   const isRunning  = status === 'running';
   const canProcess = !!inputFile && !isRunning;
-  const progress   = Math.round((currentStep / STEPS.length) * 100);
+  // Removed unused progress variable
   const elapsedFmt = elapsedSec > 0
     ? ` · ${Math.floor(elapsedSec / 60)}m ${String(elapsedSec % 60).padStart(2, '0')}s`
     : '';
 
   // Map UI mode → engine mode
   const engineMode = processingMode === 'EXTREME' ? 'EXTREME' : 'HIGH';
-
-  // Safe accessor — undefined in browser preview, defined in Electron
-  const api = typeof window !== 'undefined' ? window.electronAPI : undefined;
 
   // ── Sync sliders to processing mode ──────────────────────────────────────
   useEffect(() => {
@@ -172,17 +232,13 @@ export default function App() {
     if (box) box.scrollTop = box.scrollHeight;
   }, [logs]);
 
-  useEffect(() => {
-    api?.update.onStatus(setUpdateStatus);
-    return () => { api?.update.offStatus(); };
-  }, [api]);
-
+  // Cleanup event listeners on unmount
   useEffect(() => {
     return () => {
-      api?.trinity.offLog();
-      api?.trinity.offDone();
+      unlistenLogRef.current?.();
+      unlistenDoneRef.current?.();
     };
-  }, [api]);
+  }, []);
 
   // ── Log handler ──────────────────────────────────────────────────────────
   const appendLog = useCallback((line: string) => {
@@ -210,7 +266,6 @@ export default function App() {
   // ── Reset helpers ────────────────────────────────────────────────────────
   const resetOutputState = () => {
     setOutputFile(null);
-    setPreviewUrl(null);
     setSaveStatus(null);
     setAutoLPF(null);
     setAutoHPF(null);
@@ -230,14 +285,14 @@ export default function App() {
     setLogs(['SYSTEM READY — SELECT A FILE TO BEGIN']);
   };
 
-  // ── File Selection ─────────────────────────────────────────────────────
+  // ── File Selection (Tauri dialog) ────────────────────────────────────────
   const handleSelectFile = async () => {
-    if (isRunning || !api) return;
+    if (isRunning) return;
     try {
-      const selected = await api.dialog.openFile();
+      const selected = await invoke<string | null>('open_file_dialog');
       if (!selected) return;
       setInputFile(selected);
-      setInputPreviewUrl(api!.file.toPreviewUrl(selected));
+      setInputPreviewUrl(convertFileSrc(selected));
       setInputAudioTime(0);
       setInputAudioDuration(0);
       setInputIsPlaying(false);
@@ -257,15 +312,26 @@ export default function App() {
     if (a.paused) { a.play(); } else { a.pause(); }
   };
 
-  // ── Processing ─────────────────────────────────────────────────────────
+  // ── Output audio toggle ────────────────────────────────────────────────
+  const toggleOutputPlay = () => {
+    const a = outputAudioRef.current;
+    if (!a) return;
+    if (a.paused) { a.play(); } else { a.pause(); }
+  };
+
+  // ── Processing (Tauri invoke + event listeners) ──────────────────────────
   const handleProcess = async () => {
-    if (!inputFile || isRunning || !api) return;
+    if (!inputFile || isRunning) return;
 
     setStatus('running');
     setCurrentStep(0);
     setElapsedSec(0);
     resetOutputState();
-    setLogs(['>> [VOXIS] Initiating Trinity V8.1 Pipeline...']);
+    setOutputPreviewUrl(null);
+    setOutputIsPlaying(false);
+    setOutputAudioTime(0);
+    setOutputAudioDuration(0);
+    setLogs(['>> [VOXIS] Initiating Trinity V8.2 Pipeline...']);
 
     startTimeRef.current = Date.now();
     lastLogRef.current   = Date.now();
@@ -286,13 +352,20 @@ export default function App() {
       }
     }, 1000);
 
-    api?.trinity.offLog();
-    api?.trinity.offDone();
-    api?.trinity.onLog(appendLog);
-    api?.trinity.onDone(setOutputFile);
+    // Clean up previous listeners
+    unlistenLogRef.current?.();
+    unlistenDoneRef.current?.();
+
+    // Subscribe to Tauri events
+    unlistenLogRef.current = await listen<string>('trinity-log', (event) => {
+      appendLog(event.payload);
+    });
+    unlistenDoneRef.current = await listen<string>('trinity-done', (event) => {
+      setOutputFile(event.payload);
+    });
 
     try {
-      const result = await api!.trinity.runEngine({
+      const result = await invoke<string>('run_trinity_engine', {
         filePath:        inputFile,
         mode:            engineMode,
         stereoWidth:     stereoOutput ? 0.5 : 0.0,
@@ -306,7 +379,6 @@ export default function App() {
         setStatus('done');
         setCurrentStep(STEPS.length);
         setOutputFile(result);
-        setPreviewUrl(api!.file.toPreviewUrl(result));
         setExportFormat(outputFormat);
         appendLog('>> [VOXIS] RESTORATION COMPLETE');
         appendLog(`>> OUTPUT: ${basename(result)}`);
@@ -318,33 +390,39 @@ export default function App() {
       }
     } finally {
       if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-      api?.trinity.offLog();
-      api?.trinity.offDone();
+      unlistenLogRef.current?.();
+      unlistenDoneRef.current?.();
+      unlistenLogRef.current = null;
+      unlistenDoneRef.current = null;
     }
   };
 
   // ── Cancel ─────────────────────────────────────────────────────────────
   const handleCancel = async () => {
-    if (!isRunning || !api) return;
+    if (!isRunning) return;
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     try {
-      await api!.trinity.cancelEngine();
+      await invoke('cancel_engine');
       setStatus('idle');
       setCurrentStep(0);
       setElapsedSec(0);
+      appendLog('>> [VOXIS] Processing cancelled by user.');
     } catch (e) {
       appendLog(`[ERROR] Cancel failed: ${errMsg(e)}`);
     }
   };
 
-  // ── Save As ────────────────────────────────────────────────────────────
+  // ── Save As (Tauri dialog + file copy) ──────────────────────────────────
   const handleSaveAs = async () => {
-    if (!outputFile || !api) return;
-    const ext = exportFormat.toLowerCase() as string;
-    const dest = await api!.dialog.saveFile(basename(outputFile), ext);
-    if (!dest) return;
+    if (!outputFile) return;
+    const ext = exportFormat.toLowerCase();
     try {
-      await api!.file.copy(outputFile, dest);
+      const dest = await invoke<string | null>('save_file_dialog', {
+        defaultName: basename(outputFile),
+        ext,
+      });
+      if (!dest) return;
+      await invoke('copy_file', { src: outputFile, dest });
       setSaveStatus(`Saved → ${basename(dest)}`);
       appendLog(`>> [VOXIS] Exported to: ${dest}`);
     } catch (e) {
@@ -354,9 +432,9 @@ export default function App() {
 
   // ── Reveal ────────────────────────────────────────────────────────────
   const handleRevealOutput = async () => {
-    if (!outputFile || !api) return;
+    if (!outputFile) return;
     try {
-      await api!.shell.openPath(outputFile);
+      await invoke('reveal_in_folder', { path: outputFile });
     } catch {
       appendLog(`[INFO] Output: ${outputFile}`);
     }
@@ -365,41 +443,6 @@ export default function App() {
   // ── Render ─────────────────────────────────────────────────────────────
   return (
     <div className="app-shell">
-
-      {/* ── UPDATE BANNER ── */}
-      <AnimatePresence>
-        {updateStatus && (
-          <motion.div
-            className="update-banner"
-            initial={{ opacity: 0, y: -32 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -32 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-          >
-            {updateStatus.type === 'available' && (
-              <>
-                <span>UPDATE AVAILABLE — v{updateStatus.version}</span>
-                <motion.button className="btn-update" onClick={() => api!.update.download()}
-                  whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}>
-                  DOWNLOAD
-                </motion.button>
-              </>
-            )}
-            {updateStatus.type === 'progress' && (
-              <span>DOWNLOADING UPDATE... {updateStatus.percent ?? 0}%</span>
-            )}
-            {updateStatus.type === 'downloaded' && (
-              <>
-                <span>UPDATE READY — RESTART TO APPLY</span>
-                <motion.button className="btn-update btn-update-install" onClick={() => api!.update.install()}
-                  whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}>
-                  RESTART &amp; INSTALL
-                </motion.button>
-              </>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* ── HEADER ── */}
       <header className="app-header">
@@ -411,9 +454,8 @@ export default function App() {
         <div className="header-subtitle">
           VOICE RESTORATION V4.0.0 | BY GLASS STONE
         </div>
-        <div className="header-online">
-          <span className="online-dot" />
-          ONLINE
+        <div className="header-version">
+          GUI V4.0.0 // ENGINE V8.2
         </div>
       </header>
 
@@ -423,7 +465,18 @@ export default function App() {
         {/* ── SIDEBAR ── */}
         <aside className="sidebar">
 
-          {/* Processing Mode */}
+          
+          <AnimatePresence mode="wait">
+            {status === 'idle' ? (
+              <motion.div
+                key="controls"
+                className="sidebar-controls"
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.3 }}
+              >
+{/* Processing Mode */}
           <div className="sb-section">
             <div className="sb-label">PROCESSING MODE</div>
             {(['QUICK', 'STANDARD', 'EXTREME'] as ProcessingMode[]).map(m => (
@@ -432,7 +485,9 @@ export default function App() {
                 className={`mode-btn ${processingMode === m ? 'active' : ''} ${m === 'EXTREME' && processingMode === m ? 'extreme' : ''}`}
                 onClick={() => setProcessingMode(m)}
                 disabled={isRunning}
-                whileTap={!isRunning ? { scale: 0.97 } : {}}
+                whileHover={!isRunning ? { scale: 1.03, backgroundColor: 'var(--gray-1)' } : {}}
+                whileTap={!isRunning ? { scale: 0.95 } : {}}
+                transition={{ type: 'spring', stiffness: 400, damping: 25 }}
               >
                 {m}
               </motion.button>
@@ -449,7 +504,9 @@ export default function App() {
                   className={`factor-btn ${upscaleFactor === f ? 'active' : ''}`}
                   onClick={() => setUpscaleFactor(f)}
                   disabled={isRunning}
-                  whileTap={!isRunning ? { scale: 0.95 } : {}}
+                  whileHover={!isRunning ? { scale: 1.05, backgroundColor: 'var(--gray-1)' } : {}}
+                  whileTap={!isRunning ? { scale: 0.92 } : {}}
+                  transition={{ type: 'spring', stiffness: 400, damping: 25 }}
                 >
                   {f}x
                 </motion.button>
@@ -461,13 +518,15 @@ export default function App() {
           <div className="sb-section">
             <div className="sb-label">OUTPUT FORMAT</div>
             <div className="btn-row">
-              {(['WAV', 'FLAC', 'MP3'] as OutputFormat[]).map(f => (
+              {(['WAV', 'FLAC', 'MP3', 'WAV24', 'WAV32', 'ALAC'] as OutputFormat[]).map(f => (
                 <motion.button
                   key={f}
                   className={`format-btn ${outputFormat === f ? 'active' : ''}`}
                   onClick={() => { setOutputFormat(f); setExportFormat(f); }}
                   disabled={isRunning}
-                  whileTap={!isRunning ? { scale: 0.95 } : {}}
+                  whileHover={!isRunning ? { scale: 1.05, backgroundColor: 'var(--gray-1)' } : {}}
+                  whileTap={!isRunning ? { scale: 0.92 } : {}}
+                  transition={{ type: 'spring', stiffness: 400, damping: 25 }}
                 >
                   {f}
                 </motion.button>
@@ -530,17 +589,22 @@ export default function App() {
               className="bauhaus-range range-red"
               disabled={isRunning}
             />
+            <div className="sb-desc">Controls how closely the model follows the noise profile. Higher values sharpen detail; lower values sound more natural.</div>
           </div>
 
           {/* High Precision */}
           <div className="sb-section">
             <div className="toggle-item">
               <span className="sb-label no-mb">HIGH PRECISION</span>
-              <label className="toggle-switch">
+              <motion.label
+                className="toggle-switch"
+                whileHover={!isRunning ? { scale: 1.05 } : {}}
+                whileTap={!isRunning ? { scale: 0.95 } : {}}
+              >
                 <input type="checkbox" checked={highPrecision}
                   onChange={e => setHighPrecision(e.target.checked)} disabled={isRunning} />
                 <span className="toggle-track green" />
-              </label>
+              </motion.label>
             </div>
             <div className="sb-desc">32-bit float processing. Reduces rounding artifacts on quiet audio.</div>
           </div>
@@ -549,11 +613,15 @@ export default function App() {
           <div className="sb-section">
             <div className="toggle-item">
               <span className="sb-label no-mb">STEREO OUTPUT</span>
-              <label className="toggle-switch">
+              <motion.label
+                className="toggle-switch"
+                whileHover={!isRunning ? { scale: 1.05 } : {}}
+                whileTap={!isRunning ? { scale: 0.95 } : {}}
+              >
                 <input type="checkbox" checked={stereoOutput}
                   onChange={e => setStereoOutput(e.target.checked)} disabled={isRunning} />
                 <span className="toggle-track blue" />
-              </label>
+              </motion.label>
             </div>
             <div className="sb-desc">Preserve left/right channels. Disable for mono mic recordings.</div>
           </div>
@@ -576,6 +644,63 @@ export default function App() {
                : 'MAX — Fastest, high memory'}
             </div>
           </div>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="telemetry"
+                className="sidebar-telemetry"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+                transition={{ duration: 0.3 }}
+              >
+                <div className="telemetry-header">
+                  VOXIS TELEMETRY
+                  <div className="telemetry-time">{elapsedFmt.replace(' · ', '') || '0m 00s'}</div>
+                </div>
+
+                <div className="status-line sidebar-status">
+                  {status === 'error' ? (
+                    <span className="status-error">{'[!] '} ENGINE ERROR</span>
+                  ) : (
+                    <motion.span
+                      className="status-running"
+                      animate={{ opacity: [1, 0.6, 1] }}
+                      transition={{ repeat: Infinity, duration: 1.5 }}
+                    >
+                      {currentStep === 0
+                        ? `>> STARTING...`
+                        : `>> STAGE ${currentStep}/${STEPS.length}`
+                      }
+                    </motion.span>
+                  )}
+                </div>
+
+                {(autoLPF !== null || autoHPF !== null || autoVocal !== null) && (
+                  <div className="eq-readouts sidebar-eq">
+                    <div className="eq-chip"><span className="eq-chip-label">LPF</span><span className="eq-chip-val">{autoLPF !== null ? `${(autoLPF / 1000).toFixed(1)}kHz` : '—'}</span></div>
+                    <div className="eq-chip"><span className="eq-chip-label">HPF</span><span className="eq-chip-val">{autoHPF !== null ? `${autoHPF}Hz` : '—'}</span></div>
+                    <div className="eq-chip"><span className="eq-chip-label">VOCAL</span><span className="eq-chip-val">{autoVocal !== null ? `${autoVocal > 0 ? '+' : ''}${autoVocal}dB` : '—'}</span></div>
+                  </div>
+                )}
+
+                <div className="log-viewer sidebar-logs" ref={logBoxRef}>
+                  <AnimatePresence>
+                    {logs.map((line, i) => (
+                      <motion.div
+                        key={i}
+                        className={`log-line ${line.includes('[ERROR]') ? 'log-error' : line.startsWith('>>') ? 'log-step' : ''}`}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                      >
+                        {line}
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
         </aside>
 
@@ -630,10 +755,14 @@ export default function App() {
 
           {/* ── Content Area ── */}
           <div className="content-area">
-
-            {/* Pipeline + Logs (when NOT done) */}
-            {status !== 'done' && (
-              <div className="pipeline-content">
+            <AnimatePresence mode="wait">
+              {status !== 'done' ? (
+                <motion.div
+                  key="pipeline"
+                  className="pipeline-content"
+                  exit={{ opacity: 0, scale: 0.98, filter: "blur(5px)" }}
+                  transition={{ duration: 0.5, ease: "easeInOut" }}
+                >
 
                 {/* ── Pipeline Guide (idle state) ── */}
                 {!isRunning && status !== 'error' && (
@@ -659,113 +788,12 @@ export default function App() {
                   </div>
                 )}
 
-                {/* Progress bar */}
-                <AnimatePresence>
-                  {isRunning && (
-                    <motion.div
-                      className="progress-strip"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                    >
-                      <motion.div
-                        className="progress-fill"
-                        animate={{ width: `${progress}%` }}
-                        transition={{ type: 'spring', stiffness: 80, damping: 20 }}
-                      />
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                {/* Status line */}
-                <div className="status-line">
-                  {isRunning ? (
-                    <motion.span
-                      className="status-running"
-                      animate={{ opacity: [1, 0.6, 1] }}
-                      transition={{ repeat: Infinity, duration: 1.5 }}
-                    >
-                      {currentStep === 0
-                        ? `\u25B6 STARTING...${elapsedFmt}`
-                        : `\u25B6 STEP ${currentStep}/${STEPS.length} — ${STEPS[currentStep - 1]?.label ?? 'PROCESSING'}${elapsedFmt}`
-                      }
-                    </motion.span>
-                  ) : status === 'error' ? (
-                    <span className="status-error">{'■'} ENGINE ERROR — CHECK LOG</span>
-                  ) : (
-                    <span className="status-idle">{'○'} STANDBY</span>
-                  )}
-                </div>
-
-                {/* Auto EQ readouts (when available) */}
-                {(autoLPF !== null || autoHPF !== null || autoVocal !== null) && (
-                  <div className="eq-readouts">
-                    <div className="eq-chip">
-                      <span className="eq-chip-label">LPF</span>
-                      <span className="eq-chip-val">{autoLPF !== null ? `${(autoLPF / 1000).toFixed(1)}kHz` : '—'}</span>
-                    </div>
-                    <div className="eq-chip">
-                      <span className="eq-chip-label">HPF</span>
-                      <span className="eq-chip-val">{autoHPF !== null ? `${autoHPF}Hz` : '—'}</span>
-                    </div>
-                    <div className="eq-chip">
-                      <span className="eq-chip-label">VOCAL</span>
-                      <span className="eq-chip-val">{autoVocal !== null ? `${autoVocal > 0 ? '+' : ''}${autoVocal}dB` : '—'}</span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Pipeline steps (compact) */}
+                
+                {/* Pipeline + Animated Stage Progress */}
                 {isRunning && (
-                  <>
-                    <div className="pipeline-steps-compact">
-                      {STEPS.map(step => {
-                        const isActive = currentStep === step.id && isRunning;
-                        const isDone   = currentStep > step.id;
-                        return (
-                          <div
-                            key={step.id}
-                            className={`ps-step ${isActive ? 'ps-active' : ''} ${isDone ? 'ps-done' : ''}`}
-                          >
-                            <span className="ps-indicator">
-                              {isDone ? '■' : isActive ? '▶' : '○'}
-                            </span>
-                            <span className="ps-label">{step.label}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    {/* Active step description */}
-                    {currentStep > 0 && currentStep <= STEPS.length && (
-                      <motion.div
-                        className="active-step-info"
-                        key={currentStep}
-                        initial={{ opacity: 0, y: 6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.3 }}
-                      >
-                        <span className="active-step-tag">{STEPS[currentStep - 1].sublabel}</span>
-                        <span className="active-step-desc">{STEPS[currentStep - 1].description}</span>
-                      </motion.div>
-                    )}
-                  </>
+                  <AnimatedStageProgress currentStep={currentStep} />
                 )}
 
-                {/* Log viewer */}
-                <div className="log-viewer" ref={logBoxRef}>
-                  {logs.map((line, i) => (
-                    <div
-                      key={i}
-                      className={`log-line ${
-                        line.includes('[ERROR]') ? 'log-error'
-                        : line.startsWith('>>') ? 'log-step'
-                        : ''
-                      }`}
-                    >
-                      {line}
-                    </div>
-                  ))}
-                </div>
 
                 {/* Action bar */}
                 <div className="action-bar">
@@ -801,12 +829,8 @@ export default function App() {
                     </motion.button>
                   )}
                 </div>
-              </div>
-            )}
-
-            {/* ── Completion Overlay ── */}
-            <AnimatePresence>
-              {status === 'done' && outputFile && (
+              </motion.div>
+            ) : status === 'done' && outputFile ? (
                 <motion.div
                   className="completion-overlay"
                   initial={{ opacity: 0 }}
@@ -819,14 +843,45 @@ export default function App() {
                     animate={{ scale: 1, y: 0 }}
                     transition={{ type: 'spring', stiffness: 300, damping: 25 }}
                   >
-                    <div className="completion-check">{'✓'}</div>
+                    <div className="completion-check">{'[OK]'}</div>
                     <h2 className="completion-title">RESTORATION COMPLETE</h2>
                     <p className="completion-sub">48kHz / Stereo</p>
+
+                    {/* Output Playback */}
+                    <div className="output-playback-container" style={{ margin: '1rem 0', display: 'flex', alignItems: 'center', gap: '1rem', background: 'var(--gray-1)', padding: '0.75rem', border: 'var(--border-bold) solid var(--black)', width: '100%' }}>
+                      <motion.button
+                        className="file-play-btn"
+                        onClick={toggleOutputPlay}
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                      >
+                        {outputIsPlaying ? '||' : '>>'}
+                      </motion.button>
+                      <div className="waveform-bar" style={{ flex: 1, minHeight: '20px', position: 'relative' }}>
+                        <div className="waveform-inner" />
+                        <motion.div 
+                          style={{ position: 'absolute', top: 0, bottom: 0, left: 0, background: 'rgba(0,0,0,0.15)', width: `${outputAudioDuration ? (outputAudioTime / outputAudioDuration) * 100 : 0}%` }} 
+                        />
+                      </div>
+                      <div className="file-duration" style={{ fontSize: '0.85rem' }}>
+                        {fmtTime(outputAudioTime)} / {fmtTime(outputAudioDuration)}
+                      </div>
+                      <audio
+                        ref={outputAudioRef}
+                        src={outputPreviewUrl || undefined}
+                        onPlay={() => setOutputIsPlaying(true)}
+                        onPause={() => setOutputIsPlaying(false)}
+                        onEnded={() => { setOutputIsPlaying(false); setOutputAudioTime(0); }}
+                        onTimeUpdate={() => setOutputAudioTime(outputAudioRef.current?.currentTime ?? 0)}
+                        onLoadedMetadata={() => setOutputAudioDuration(outputAudioRef.current?.duration ?? 0)}
+                      />
+                    </div>
+
 
                     <div className="export-section">
                       <div className="export-label">EXPORT FORMAT</div>
                       <div className="export-btns">
-                        {(['WAV', 'FLAC', 'MP3'] as OutputFormat[]).map(f => (
+                        {(['WAV', 'FLAC', 'MP3', 'WAV24', 'WAV32', 'ALAC'] as OutputFormat[]).map(f => (
                           <motion.button
                             key={f}
                             className={`export-fmt-btn ${exportFormat === f ? 'active' : ''}`}
@@ -868,7 +923,7 @@ export default function App() {
                     {saveStatus && <div className="save-status">{saveStatus}</div>}
                   </motion.div>
                 </motion.div>
-              )}
+              ) : null}
             </AnimatePresence>
 
           </div>

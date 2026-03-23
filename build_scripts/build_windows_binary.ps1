@@ -1,10 +1,10 @@
 # =============================================================================
-# VOXIS V4.0.0 DENSE — Windows Binary Build Script
+# VOXIS V4.0.0 DENSE — Windows Binary Build Script (Tauri)
 # Copyright © 2026 Glass Stone LLC. All Rights Reserved.
 # CEO: Gabriel B. Rodriguez
 #
 # Run this on a Windows x64 machine to produce trinity_v8_core.exe.
-# Requires: Python 3.11, pip, CUDA toolkit (optional but recommended)
+# Requires: Python 3.11, pip, Rust/Cargo, CUDA toolkit (optional)
 #
 # Usage (from repo root):
 #   .\build_scripts\build_windows_binary.ps1
@@ -18,10 +18,12 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ROOT = Split-Path -Parent $PSScriptRoot
+$TARGET_TRIPLE = "x86_64-pc-windows-msvc"
 
 Write-Host ""
-Write-Host "  VOXIS V4.0.0 DENSE — Windows Binary Build" -ForegroundColor Cyan
+Write-Host "  VOXIS V4.0.0 DENSE — Windows Build (Tauri)" -ForegroundColor Cyan
 Write-Host "  Glass Stone LLC © 2026" -ForegroundColor Cyan
+Write-Host "  Target: $TARGET_TRIPLE" -ForegroundColor Cyan
 Write-Host ""
 
 # ── Preflight ─────────────────────────────────────────────────────────────────
@@ -29,8 +31,13 @@ Write-Host "[1/4] Checking prerequisites..." -ForegroundColor Yellow
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
     throw "Python not found. Install Python 3.11 from python.org"
 }
+if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
+    throw "Rust/Cargo not found. Install from https://rustup.rs"
+}
 $pyVer = python --version 2>&1
 Write-Host "      Python: $pyVer" -ForegroundColor Green
+$cargoVer = cargo --version 2>&1
+Write-Host "      Cargo: $cargoVer" -ForegroundColor Green
 
 # ── Python dependencies ───────────────────────────────────────────────────────
 if (-not $SkipPythonDeps) {
@@ -57,22 +64,22 @@ if (-not $SkipPythonDeps) {
 }
 
 # ── Build frozen binary ───────────────────────────────────────────────────────
-Write-Host "[3/4] Building Trinity V8.1 Engine (PyInstaller)..." -ForegroundColor Yellow
+Write-Host "[3/4] Building Trinity V8.2 Engine (PyInstaller)..." -ForegroundColor Yellow
 Set-Location $ROOT
 pyinstaller --noconfirm --clean trinity_v8_core_win.spec
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed (exit $LASTEXITCODE)" }
 Write-Host "      Binary built." -ForegroundColor Green
 
-# ── Stage output ──────────────────────────────────────────────────────────────
-Write-Host "[4/4] Staging binary for Electron..." -ForegroundColor Yellow
-$binDir = "$ROOT\app\resources\bin"
+# ── Stage output for Tauri sidecar ────────────────────────────────────────────
+Write-Host "[4/4] Staging sidecar for Tauri..." -ForegroundColor Yellow
+$binDir = "$ROOT\app\src-tauri\binaries"
 if (-not (Test-Path $binDir)) { New-Item -ItemType Directory -Path $binDir | Out-Null }
-Copy-Item "$ROOT\dist\trinity_v8_core.exe" "$binDir\trinity_v8_core.exe" -Force
-Write-Host "      Staged → $binDir\trinity_v8_core.exe" -ForegroundColor Green
+$sidecarName = "trinity_v8_core-$TARGET_TRIPLE.exe"
+Copy-Item "$ROOT\dist\trinity_v8_core.exe" "$binDir\$sidecarName" -Force
+Write-Host "      Staged → $binDir\$sidecarName" -ForegroundColor Green
 
 Write-Host ""
 Write-Host "  Build complete! Next steps:" -ForegroundColor Cyan
-Write-Host "  1. Download FFmpeg Windows binaries to app\resources\bin\" -ForegroundColor White
-Write-Host "     (ffmpeg.exe + ffprobe.exe from https://github.com/BtbN/FFmpeg-Builds)" -ForegroundColor Gray
-Write-Host "  2. Run: cd app && npm run electron:build:win" -ForegroundColor White
+Write-Host "  1. Ensure FFmpeg is in PATH (or install via winget/scoop)" -ForegroundColor White
+Write-Host "  2. Run: cd app && npm run tauri:build:win" -ForegroundColor White
 Write-Host ""

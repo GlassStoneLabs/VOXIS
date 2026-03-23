@@ -44,14 +44,16 @@ hiddenimports = [
     'pedalboard', 'pedalboard._pedalboard',
     # HuggingFace / transformers
     'transformers', 'transformers.modeling_utils',
-    'huggingface_hub', 'huggingface_hub.utils',
+    'huggingface_hub', 'huggingface_hub.utils', 'huggingface_hub.file_download',
     'tokenizers',
     'einops', 'omegaconf', 'yaml',
     'packaging', 'packaging.version',
     'filelock', 'requests', 'urllib3', 'certifi',
     # System / Cross-platform
     'psutil', 'platform', 'hashlib', 'contextlib',
-    # Voxis pipeline modules (v8.1 resilient backend)
+    # Voxis pipeline modules (v8.2 resilient backend)
+    'model_registry',
+    'model_downloader',
     'modules.ingest',
     'modules.device_utils',
     'modules.path_utils',
@@ -66,6 +68,11 @@ hiddenimports = [
     'modules.error_telemetry',
     'modules.pipeline_cache',
     'modules.retry_engine',
+    'modules.diffhiervc_wrapper',
+    'modules.temp_manager',
+    # Diff-HierVC (vocal refinement)
+    'amfm_decompy', 'amfm_decompy.pYAAPT', 'amfm_decompy.basic_tools',
+    'alias_free_torch',
     # Apple CoreML
     'coremltools', 'coremltools.models', 'coremltools.models.MLModel',
     'coremltools.converters', 'coremltools.converters.mil',
@@ -113,6 +120,14 @@ try:
     datas += collect_data_files('coremltools', includes=['**/*.py', '**/*.proto', '**/*.mlmodel'])
 except Exception:
     pass
+try:
+    datas += collect_data_files('alias_free_torch', includes=['**/*'])
+except Exception:
+    pass
+try:
+    datas += collect_data_files('amfm_decompy', includes=['**/*'])
+except Exception:
+    pass
 
 binaries = []
 try:
@@ -128,6 +143,7 @@ a = Analysis(
         os.path.abspath('trinity_engine/modules'),
         os.path.abspath('trinity_engine/modules/external/voicerestore'),
         os.path.abspath('trinity_engine/modules/external/voicerestore/BigVGAN'),
+        os.path.abspath('trinity_engine/modules/external/diff_hiervc'),
     ],
     binaries=binaries,
     datas=datas,

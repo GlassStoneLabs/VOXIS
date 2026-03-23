@@ -4,7 +4,7 @@ VOXIS V4.0.0 DENSE — First-Run Setup
 Copyright © 2026 Glass Stone LLC.
 
 Restores models from the distro/ folder into the correct locations
-so the Trinity V8.1 engine can run immediately after download.
+so the Trinity V8.2 engine can run immediately after download.
 
 Usage:
     python3 setup_models.py          # Install models from distro/
@@ -89,16 +89,16 @@ def check():
 
     for name, path in checks:
         found = _has_files(path)
-        icon = "✓" if found else "✗"
+        icon = "[OK]" if found else "✗"
         print(f"  [{icon}] {name:30} → {path}")
         if not found:
             all_ok = False
 
     print()
     if all_ok:
-        print("✓ All models installed. Ready to run.\n")
+        print("[OK] All models installed. Ready to run.\n")
     else:
-        print("⚠ Some models missing. Run: python3 setup_models.py\n")
+        print("[!] Some models missing. Run: python3 setup_models.py\n")
     return all_ok
 
 
@@ -120,7 +120,7 @@ def _install(src, dst, name):
         shutil.copytree(src, dst)
 
     size = _dir_size(dst)
-    print(f"  [✓] {name} installed ({size}) → {dst}")
+    print(f"  [[OK]] {name} installed ({size}) → {dst}")
 
 
 def _has_files(path):

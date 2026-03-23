@@ -4,6 +4,8 @@ import shutil
 import time
 import json
 
+from .path_utils import get_engine_base_dir
+
 class PipelineCache:
     """
     SHA-256 stage caching system for the Trinity V8.2 pipeline.
@@ -16,10 +18,11 @@ class PipelineCache:
     MAX_SIZE_GB = 4.0    # 4 GB max cache size (reduced from 8GB to prevent disk pressure)
 
     def __init__(self):
-        home_dir = os.path.expanduser("~")
-        self.cache_dir = os.path.join(home_dir, ".voxis", "cache")
+        self.base_dir = get_engine_base_dir()
+        self.cache_dir = os.path.join(self.base_dir, ".temp", "cache")
         os.makedirs(self.cache_dir, exist_ok=True)
         # Session statistics
+        self.enabled = True
         self._hits = 0
         self._misses = 0
         self._purge_stale()
@@ -63,6 +66,8 @@ class PipelineCache:
         Returns the cached WAV path for a given stage, or None on miss.
         Validated: cached file must exist on disk and be non-empty.
         """
+        if not self.enabled:
+            return None
         cached_path = os.path.join(self.cache_dir, f"{job_key}_{stage}.wav")
         if os.path.exists(cached_path):
             if os.path.getsize(cached_path) > 0:
@@ -71,7 +76,7 @@ class PipelineCache:
                 return cached_path
             else:
                 # Corrupt cache entry — remove it
-                print(f"[PipelineCache] ⚠ Empty cache file for {stage}, removing.")
+                print(f"[PipelineCache] [!] Empty cache file for {stage}, removing.")
                 try:
                     os.remove(cached_path)
                 except OSError:
@@ -84,6 +89,8 @@ class PipelineCache:
         Hardlinks the stage output WAV into cache (instant, no data copy).
         Falls back to copy if cross-device or filesystem doesn't support links.
         """
+        if not self.enabled:
+            return wav_path
         cached_path = os.path.join(self.cache_dir, f"{job_key}_{stage}.wav")
         try:
             if os.path.exists(cached_path):
@@ -96,6 +103,11 @@ class PipelineCache:
                 print(f"[PipelineCache] 💾 CACHED     → {stage} (copy fallback)")
             except Exception as e:
                 print(f"[PipelineCache] Cache write failed for {stage}: {e}")
+                
+        # ── SLIDING CACHE LOGIC ──
+        # Continuously enforce size limits after every write
+        self._enforce_size_limit()
+        
         return cached_path
 
     def invalidate(self, job_key: str):

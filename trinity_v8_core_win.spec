@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# VOXIS V4.0.0 DENSE — Trinity V8.1 PyInstaller Spec (Windows x64)
+# VOXIS V4.0.0 DENSE — Trinity V8.2 PyInstaller Spec (Windows x64)
 # Copyright © 2026 Glass Stone LLC. All Rights Reserved.
 # CEO: Gabriel B. Rodriguez
 #
@@ -54,7 +54,7 @@ hiddenimports = [
     # ONNX + DirectML (Windows GPU acceleration)
     'onnx', 'onnx.checker', 'onnx.numpy_helper', 'onnx.helper',
     'onnxruntime', 'onnxruntime.capi', 'onnxruntime.capi._pybind_state',
-    # Voxis pipeline modules (v8.1 resilient backend)
+    # Voxis pipeline modules (v8.2 resilient backend)
     'modules.ingest',
     'modules.device_utils',
     'modules.path_utils',

@@ -47,11 +47,12 @@ class GlassStoneSeparator:
     Isolates vocals from instruments for targeted restoration.
     """
 
-    def __init__(self, device=None):
+    def __init__(self, device=None, temp_manager=None):
         self.device = device or DeviceOptimizer.get_optimal_device()
         self.device_str = DeviceOptimizer.get_device_string()
         self.separator = None
         self.model_loaded = False
+        self._temp_manager = temp_manager
 
         # On Apple Silicon, prefer CoreML-accelerated ONNX runtime for MDX/VR fallback models.
         # GS-PRISM primary (BS-RoFormer) uses PyTorch directly — device_str routes it to MPS.
@@ -60,7 +61,10 @@ class GlassStoneSeparator:
         # Resolve paths relative to this script or Tauri resources
         base_dir = get_engine_base_dir()
         self.model_dir = os.path.join(base_dir, "dependencies", "models", "audio_separator")
-        self.temp_dir = os.path.join(base_dir, "trinity_temp")
+        if temp_manager:
+            self.temp_dir = temp_manager.get_stage_dir("separate")
+        else:
+            self.temp_dir = os.path.join(base_dir, "trinity_temp")
         os.makedirs(self.model_dir, exist_ok=True)
         os.makedirs(self.temp_dir, exist_ok=True)
 
@@ -68,7 +72,7 @@ class GlassStoneSeparator:
         print(f"[{self.__class__.__name__}] Model dir: {self.model_dir}")
 
         if not SEPARATOR_AVAILABLE:
-            print(f"[{self.__class__.__name__}] ⚠ audio-separator not installed. "
+            print(f"[{self.__class__.__name__}] [!] audio-separator not installed. "
                   f"Install with: pip install audio-separator[cpu]")
             return
 
@@ -127,16 +131,12 @@ class GlassStoneSeparator:
                     return dist
                 Separator.get_package_distribution = _safe_get_dist
 
-            sep_kwargs = dict(
+            self.separator = Separator(
                 log_level=logging.WARNING,
                 model_file_dir=self.model_dir,
                 output_dir=self.temp_dir,
+                mdx_params={"hop_length": 1024, "segment_size": 256, "overlap": 0.5, "batch_size": 1}
             )
-            # Inject CoreML ONNX providers if available
-            if self._ort_providers and "CoreMLExecutionProvider" in self._ort_providers:
-                sep_kwargs["onnx_execution_providers"] = self._ort_providers
-
-            self.separator = Separator(**sep_kwargs)
 
             # audio-separator 0.41.1+: custom models (e.g. GS-PRISM/BS-RoFormer) are NOT in
             # the package's built-in registry. load_model_data_from_yaml() must be
@@ -149,7 +149,7 @@ class GlassStoneSeparator:
 
             self.separator.load_model(model_filename=model_name)
             self.model_loaded = True
-            print(f"[{self.__class__.__name__}] ✓ Model loaded: {model_name}")
+            print(f"[{self.__class__.__name__}] [OK] Model loaded: {model_name}")
 
         except Exception as e:
             print(f"[{self.__class__.__name__}] Model load failed ({model_name}): {e}")
@@ -189,10 +189,10 @@ class GlassStoneSeparator:
                 # Validate output
                 out_size = os.path.getsize(vocal_path)
                 if out_size < 1024:  # Less than 1KB is suspicious
-                    print(f"[{self.__class__.__name__}] ⚠ Output suspiciously small ({out_size}B)")
+                    print(f"[{self.__class__.__name__}] [!] Output suspiciously small ({out_size}B)")
                     return input_audio_path
 
-                print(f"[{self.__class__.__name__}] ✓ Vocals isolated: {os.path.basename(vocal_path)} "
+                print(f"[{self.__class__.__name__}] [OK] Vocals isolated: {os.path.basename(vocal_path)} "
                       f"({out_size / 1024 / 1024:.1f} MB)")
                 return vocal_path
             else:

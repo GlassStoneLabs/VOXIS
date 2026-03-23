@@ -182,8 +182,8 @@ class PedalboardMastering:
         """
         effects = []
 
-        # ── Subsonic HPF (max of Harman 25Hz and Auto-EQ HPF) ────
-        hpf = max(25.0, float(highpass_hz))
+        # ── Subsonic HPF (max of 20Hz and Auto-EQ HPF) ────
+        hpf = max(20.0, float(highpass_hz))
         effects.append(HighpassFilter(cutoff_frequency_hz=hpf))
 
         # ── Bass shelf: +2 dB @ 105 Hz (reduced to prevent masking vocals) ──
@@ -207,26 +207,26 @@ class PedalboardMastering:
             q=0.8,
         ))
 
-        # ── Presence / clarity: +2.5 dB @ 3 kHz ────────────────
+        # ── Presence / clarity: +1.0 dB @ 3 kHz (Smoothed vocals) ─────
         # Blend with Auto-EQ vocal presence
-        presence = 2.5 + float(vocal_presence_db) * 0.5
+        presence = 1.0 + float(vocal_presence_db) * 0.5
         effects.append(PeakFilter(
             cutoff_frequency_hz=3000.0,
             gain_db=presence,
             q=1.0,
         ))
 
-        # ── Harshness taming: -1.5 dB @ 6.5 kHz ─────────────────
+        # ── Harshness/Sibilance taming: -3.5 dB @ 6.5 kHz (Smooth vocals) ──
         effects.append(PeakFilter(
             cutoff_frequency_hz=6500.0,
-            gain_db=-1.5,
+            gain_db=-3.5,
             q=1.5,
         ))
 
-        # ── Harman treble rolloff: -1.5 dB shelf @ 10 kHz ─────
+        # ── Harman treble rolloff: -2.5 dB shelf @ 10 kHz (Warmth) ────
         effects.append(HighShelfFilter(
             cutoff_frequency_hz=10000.0,
-            gain_db=-1.5,
+            gain_db=-2.5,
             q=0.7,
         ))
 

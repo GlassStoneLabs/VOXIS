@@ -199,9 +199,9 @@ class ONNXBridge:
             if ONNX_AVAILABLE:
                 model_proto = onnx.load(onnx_path)
                 onnx.checker.check_model(model_proto, full_check=True)
-                print(f"[ONNXBridge] ✓ ONNX validation passed")
+                print(f"[ONNXBridge] [OK] ONNX validation passed")
 
-            print(f"[ONNXBridge] ✓ {model_name} exported → {onnx_path} "
+            print(f"[ONNXBridge] [OK] {model_name} exported → {onnx_path} "
                   f"({os.path.getsize(onnx_path) / 1024 / 1024:.1f} MB)")
 
             return self._load_session(onnx_path)
@@ -241,7 +241,7 @@ class ONNXBridge:
                 "CPUExecutionProvider":    "CPU",
             }.get(active_provider, active_provider)
 
-            print(f"[ONNXBridge] ✓ Session loaded — provider: {provider_label}")
+            print(f"[ONNXBridge] [OK] Session loaded — provider: {provider_label}")
             return session
 
         except Exception as e:

@@ -12,26 +12,26 @@
   "app": {
     "windows": [
       {
-        "title": "Voxis 4.0 DENSE — Glass Stone LLC",
+        "title": "VOXIS 4.0 DENSE — Voice Restoration | Glass Stone LLC",
         "width": 1120,
         "height": 820,
         "resizable": true,
         "fullscreen": false,
         "center": true,
         "minWidth": 900,
-        "minHeight": 700
+        "minHeight": 700,
+        "decorations": true,
+        "titleBarStyle": "Overlay"
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; img-src 'self' asset: https://asset.localhost; media-src 'self' asset: https://asset.localhost; style-src 'self' 'unsafe-inline'"
     }
   },
   "bundle": {
     "active": true,
     "targets": "all",
-    "resources": {
-      "../../trinity_engine/dependencies/models": "dependencies/models"
-    },
+    "resources": {},
     "externalBin": [
       "binaries/trinity_v8_core"
     ],
@@ -48,10 +48,16 @@
       "signingIdentity": null,
       "providerShortName": null
     },
+    "windows": {
+      "nsis": {
+        "installMode": "perMachine",
+        "displayLanguageSelector": false
+      }
+    },
     "publisher": "Glass Stone LLC",
     "copyright": "Copyright © 2026 Glass Stone LLC. All Rights Reserved.",
-    "longDescription": "Voxis 4.0 DENSE is a professional-grade audio restoration and enhancement application powered by Trinity V8.1. Built by Glass Stone LLC, CEO Gabriel B. Rodriguez.",
-    "shortDescription": "Professional audio restoration powered by Trinity V8.1",
+    "longDescription": "Voxis 4.0 DENSE is a professional-grade audio restoration and enhancement application powered by Trinity V8.2. Built by Glass Stone LLC, CEO Gabriel B. Rodriguez.",
+    "shortDescription": "Professional audio restoration powered by Trinity V8.2",
     "category": "Music"
   }
 }

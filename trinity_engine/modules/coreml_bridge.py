@@ -99,15 +99,26 @@ class CoreMLBridge:
 
         print(f"[CoreMLBridge] Converting {model_name} to CoreML (one-time ~30–90s)...")
 
+        # Remember the original device so we can restore after tracing
+        _orig_device = None
         try:
-            torch_model.eval()
+            first_param = next(torch_model.parameters(), None)
+            if first_param is not None:
+                _orig_device = first_param.device
+        except Exception:
+            pass
+
+        try:
+            # Model and inputs MUST be on the same device (CPU) for tracing.
+            # CoreML conversion requires CPU tensors throughout.
+            torch_model_cpu = torch_model.cpu().eval()
             sample_cpu = tuple(
                 t.detach().cpu().float() if isinstance(t, torch.Tensor) else t
                 for t in (sample_inputs if isinstance(sample_inputs, (list, tuple)) else (sample_inputs,))
             )
 
             with torch.no_grad():
-                traced = torch.jit.trace(torch_model, sample_cpu, strict=False)
+                traced = torch.jit.trace(torch_model_cpu, sample_cpu, strict=False)
 
             # Build CoreML input specs with optional dynamic dimensions
             ct_inputs = []
@@ -117,7 +128,7 @@ class CoreMLBridge:
                 shape = list(sample.shape)
                 if dynamic_axes and name in dynamic_axes:
                     for dim_idx in dynamic_axes[name]:
-                        shape[dim_idx] = ct.RangeDim(minimum=1, maximum=65536)
+                        shape[dim_idx] = ct.RangeDim(lower_bound=1, upper_bound=65536)
                 ct_inputs.append(ct.TensorType(name=name, shape=shape, dtype=float))
 
             # macOS 14+ unlocks newer ANE ops (e.g. grouped conv, attention);
@@ -137,13 +148,20 @@ class CoreMLBridge:
             mlmodel.short_description = f"Glass Stone Labs — {model_name}"
             mlmodel.author = "Glass Stone LLC — CEO: Gabriel B. Rodriguez"
             mlmodel.save(pkg_path)
-            print(f"[CoreMLBridge] ✓ {model_name} saved → {pkg_path}")
+            print(f"[CoreMLBridge] [OK] {model_name} saved → {pkg_path}")
             return self._load_package(pkg_path)
 
         except Exception as e:
             print(f"[CoreMLBridge] Conversion failed ({model_name}): {e}")
             self._cleanup_partial(pkg_path)
             return None
+        finally:
+            # Restore model to its original device after tracing
+            if _orig_device is not None and str(_orig_device) != "cpu":
+                try:
+                    torch_model.to(_orig_device)
+                except Exception:
+                    pass
 
     def _load_package(self, pkg_path: str) -> "ct.models.MLModel | None":
         """
@@ -161,14 +179,14 @@ class CoreMLBridge:
 
         # Try compute unit tiers from most to least optimal
         compute_tiers = [
-            (ct.ComputeUnit.CPU_AND_NEURAL_ENGINE, "CPU + Neural Engine (ANE/NPU)"),
-            (ct.ComputeUnit.ALL,                   "ALL (ANE + GPU + CPU)"),
-            (ct.ComputeUnit.CPU_AND_GPU,            "CPU + GPU"),
+            (ct.ComputeUnit.ALL,         "ALL (CPU + GPU + NPU)"),
+            (ct.ComputeUnit.CPU_AND_NE,  "CPU + Neural Engine (ANE/NPU)"),
+            (ct.ComputeUnit.CPU_AND_GPU, "CPU + GPU"),
         ]
         for unit, label in compute_tiers:
             try:
                 model = ct.models.MLModel(pkg_path, compute_units=unit)
-                print(f"[CoreMLBridge] ✓ Loaded — {label}")
+                print(f"[CoreMLBridge] [OK] Loaded — {label}")
                 return model
             except Exception as e:
                 print(f"[CoreMLBridge] {label} failed: {e}")
@@ -255,10 +273,11 @@ class CoreMLBridge:
 
 # ── CoreML Module Wrapper ─────────────────────────────────────────────────────
 
-class CoreMLModule:
+class CoreMLModule(torch.nn.Module):
     """
-    Drop-in replacement for a torch.nn.Module that routes __call__() through
-    a CoreML MLModel for Neural Engine execution.
+    Drop-in nn.Module replacement that routes forward() through a CoreML MLModel
+    for Neural Engine execution. Extends nn.Module so it can be assigned as a
+    child module via setattr() on parent models.
 
     Falls back to the original PyTorch module after 3 consecutive CoreML
     inference failures to guarantee pipeline continuity.
@@ -281,20 +300,31 @@ class CoreMLModule:
         output_name: str,
         bridge: CoreMLBridge = None,
     ):
-        self.original    = original
-        self.coreml      = coreml
+        super().__init__()
+        # Store original as a proper submodule for nn.Module compatibility
+        self._original   = original
+        self._coreml     = coreml
         self.input_name  = input_name
         self.output_name = output_name
-        self.bridge      = bridge or CoreMLBridge()
+        self._bridge     = bridge or CoreMLBridge()
         self._failures   = 0
         self._MAX_FAIL   = 3
 
-    def __call__(self, *args, **kwargs):
-        if self.coreml is not None and self._failures < self._MAX_FAIL:
+    @property
+    def original(self):
+        return self._original
+
+    @property
+    def h(self):
+        """Forward BigVGAN's config attribute for mel spectrogram generation."""
+        return getattr(self._original, 'h', None)
+
+    def forward(self, *args, **kwargs):
+        if self._coreml is not None and self._failures < self._MAX_FAIL:
             try:
                 primary = args[0]
-                result = self.bridge.predict_tensor(
-                    self.coreml,
+                result = self._bridge.predict_tensor(
+                    self._coreml,
                     {self.input_name: primary},
                     self.output_name,
                 )
@@ -306,26 +336,9 @@ class CoreMLModule:
                 if self._failures >= self._MAX_FAIL:
                     print("[CoreMLModule] Falling back permanently to PyTorch.")
         # PyTorch fallback — transparent to caller
-        return self.original(*args, **kwargs)
-
-    # Forward common nn.Module methods so wrapper is transparent
-    def eval(self):
-        if hasattr(self.original, 'eval'):
-            self.original.eval()
-        return self
-
-    def to(self, device):
-        if hasattr(self.original, 'to'):
-            self.original = self.original.to(device)
-        return self
+        return self._original(*args, **kwargs)
 
     def remove_weight_norm(self):
-        if hasattr(self.original, 'remove_weight_norm'):
-            self.original.remove_weight_norm()
+        if hasattr(self._original, 'remove_weight_norm'):
+            self._original.remove_weight_norm()
         return self
-
-    def parameters(self):
-        return self.original.parameters() if hasattr(self.original, 'parameters') else iter([])
-
-    def named_parameters(self):
-        return self.original.named_parameters() if hasattr(self.original, 'named_parameters') else iter([])

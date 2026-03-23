@@ -3,7 +3,7 @@
 #  VOXIS 4.0 DENSE — macOS Installer
 #  Copyright © 2026 Glass Stone LLC. All Rights Reserved.
 #  CEO: Gabriel B. Rodriguez
-#  Powered by Trinity V8.1
+#  Powered by Trinity V8.2
 # ═══════════════════════════════════════════════════════════════════
 #
 #  This installer:
@@ -11,7 +11,7 @@
 #    2. Creates a Python virtual environment
 #    3. Installs all ML dependencies (torch, torchaudio, etc.)
 #    4. Restores model weights from distro/ (~12 GB)
-#    5. Builds the Trinity V8.1 sidecar binary
+#    5. Builds the Trinity V8.2 sidecar binary
 #    6. Creates a desktop launcher
 #
 #  Usage:
@@ -38,7 +38,7 @@ banner() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║${NC}  ${BOLD}VOXIS 4.0 DENSE${NC} — Installer                          ${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}  Powered by Trinity V8.1                                ${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}  Powered by Trinity V8.2                                ${CYAN}║${NC}"
     echo -e "${CYAN}║${NC}  © 2026 Glass Stone LLC — CEO: Gabriel B. Rodriguez     ${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════╝${NC}"
     echo ""
@@ -200,7 +200,7 @@ else
 fi
 
 # ── Step 5: Verify Pipeline ─────────────────────────────────────
-step 5 "Verifying Trinity V8.1 Pipeline" "Testing all module imports..."
+step 5 "Verifying Trinity V8.2 Pipeline" "Testing all module imports..."
 
 cd "$ENGINE_DIR"
 python3 -c "
@@ -247,7 +247,7 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$DIR/venv/bin/activate"
 export PYTORCH_ENABLE_MPS_FALLBACK=1
 
-echo ">> [VOXIS] Starting Trinity V8.1 Engine..."
+echo ">> [VOXIS] Starting Trinity V8.2 Engine..."
 echo ">> [VOXIS] Platform: $(uname -s) $(uname -m)"
 
 # Try Tauri desktop app first

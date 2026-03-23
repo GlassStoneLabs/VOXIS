@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# VOXIS V4.0.0 DENSE — Desktop Build Script
+# VOXIS V4.0.0 DENSE — Desktop Build Script (Tauri)
 # Copyright © 2026 Glass Stone LLC. All Rights Reserved.
 # CEO: Gabriel B. Rodriguez
 #
@@ -23,7 +23,19 @@ err()  { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP_DIR="${PROJECT_ROOT}/app"
 ENGINE_DIR="${PROJECT_ROOT}/trinity_engine"
-BIN_OUT="${APP_DIR}/resources/bin"
+TAURI_DIR="${APP_DIR}/src-tauri"
+BIN_OUT="${TAURI_DIR}/binaries"
+
+# Detect target triple for sidecar naming
+ARCH="$(uname -m)"
+OS="$(uname -s)"
+case "${OS}-${ARCH}" in
+  Darwin-arm64)   TARGET_TRIPLE="aarch64-apple-darwin" ;;
+  Darwin-x86_64)  TARGET_TRIPLE="x86_64-apple-darwin" ;;
+  Linux-x86_64)   TARGET_TRIPLE="x86_64-unknown-linux-gnu" ;;
+  Linux-aarch64)  TARGET_TRIPLE="aarch64-unknown-linux-gnu" ;;
+  *)              TARGET_TRIPLE="${ARCH}-unknown-${OS,,}" ;;
+esac
 
 CLEAN=false; SKIP_PYTHON=false
 for arg in "$@"; do
@@ -42,25 +54,27 @@ echo "   ╚████╔╝ ╚██████╔╝██╔╝ ██╗
 echo "    ╚═══╝   ╚═════╝ ╚═╝  ╚═╝╚═╝╚══════╝"
 echo "  V4.0.0 DENSE | Glass Stone LLC © 2026"
 echo "  CEO: Gabriel B. Rodriguez"
+echo "  Build target: ${TARGET_TRIPLE}"
 echo ""
 
 # ── Preflight ─────────────────────────────────────────────────────────────────
 log "Checking build prerequisites..."
 command -v node    >/dev/null || err "Node.js not found"
 command -v python3 >/dev/null || err "Python 3 not found"
+command -v cargo   >/dev/null || err "Rust/Cargo not found — install via rustup"
 command -v ffmpeg  >/dev/null || warn "ffmpeg not found — install via Homebrew: brew install ffmpeg"
 ok "Prerequisites OK"
 
 if $CLEAN; then
   log "Cleaning previous build artifacts..."
-  rm -rf "${APP_DIR}/dist" "${APP_DIR}/dist-electron" "${APP_DIR}/release"
+  rm -rf "${APP_DIR}/dist" "${TAURI_DIR}/target/release/bundle"
   rm -rf "${PROJECT_ROOT}/dist" "${PROJECT_ROOT}/build"
   ok "Cleaned"
 fi
 
 # ── STEP 1: Build Trinity Engine (PyInstaller) ────────────────────────────────
 if ! $SKIP_PYTHON; then
-  log "STEP 1/3 — Building Trinity V8.1 Engine (PyInstaller)..."
+  log "STEP 1/3 — Building Trinity V8.2 Engine (PyInstaller)..."
   cd "${PROJECT_ROOT}"
 
   # Install Python deps (pin setuptools + numpy for PyInstaller compatibility)
@@ -76,33 +90,33 @@ if ! $SKIP_PYTHON; then
   fi
   pyinstaller --noconfirm --clean "$SPEC_FILE"
 
-  # Stage binary for Electron
+  # Stage binary for Tauri sidecar (must match target triple naming)
   mkdir -p "${BIN_OUT}"
-  cp "${PROJECT_ROOT}/dist/trinity_v8_core" "${BIN_OUT}/trinity_v8_core"
-  chmod +x "${BIN_OUT}/trinity_v8_core"
-  ok "Trinity Engine binary staged → ${BIN_OUT}/trinity_v8_core"
+  cp "${PROJECT_ROOT}/dist/trinity_v8_core" "${BIN_OUT}/trinity_v8_core-${TARGET_TRIPLE}"
+  chmod +x "${BIN_OUT}/trinity_v8_core-${TARGET_TRIPLE}"
+  ok "Trinity Engine sidecar staged → ${BIN_OUT}/trinity_v8_core-${TARGET_TRIPLE}"
 else
-  warn "Skipping Python build (--skip-python). Ensure binary exists at:"
-  warn "  ${BIN_OUT}/trinity_v8_core"
+  warn "Skipping Python build (--skip-python). Ensure sidecar exists at:"
+  warn "  ${BIN_OUT}/trinity_v8_core-${TARGET_TRIPLE}"
 fi
 
-# ── STEP 2: Build Electron Frontend ─────────────────────────────────────────
+# ── STEP 2: Build Tauri Desktop App ──────────────────────────────────────────
 log "STEP 2/3 — Installing Node dependencies..."
 cd "${APP_DIR}"
 npm ci
 ok "Dependencies installed"
 
-log "STEP 2/3 — Building Electron app..."
-npm run electron:build
-ok "Electron build complete"
+log "STEP 2/3 — Building Tauri app..."
+npm run tauri:build
+ok "Tauri build complete"
 
 # ── STEP 3: Report Output ────────────────────────────────────────────────────
 log "STEP 3/3 — Build complete!"
-RELEASE_DIR="${APP_DIR}/release"
-if [[ -d "$RELEASE_DIR" ]]; then
+BUNDLE_DIR="${TAURI_DIR}/target/release/bundle"
+if [[ -d "$BUNDLE_DIR" ]]; then
   echo ""
   echo "  Output files:"
-  find "$RELEASE_DIR" -name "*.dmg" -o -name "*.exe" | while read -r f; do
+  find "$BUNDLE_DIR" -name "*.dmg" -o -name "*.exe" -o -name "*.msi" -o -name "*.deb" -o -name "*.AppImage" 2>/dev/null | while read -r f; do
     SIZE=$(du -sh "$f" | cut -f1)
     echo "    ${GREEN}✓${NC} $(basename "$f")  ($SIZE)"
   done

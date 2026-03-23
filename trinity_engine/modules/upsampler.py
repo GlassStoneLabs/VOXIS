@@ -91,7 +91,7 @@ class TrinityUpscaler:
             print(f"[{self.__class__.__name__}] Loading GS-ASCEND model (will download on first run)...")
             self.audiosr_model = build_model(model_name="basic", device=self.device_str)
             self._initialized = True
-            print(f"[{self.__class__.__name__}] ✓ GS-ASCEND model loaded on {self.device_str}")
+            print(f"[{self.__class__.__name__}] [OK] GS-ASCEND model loaded on {self.device_str}")
 
             # Attempt hardware acceleration of the AudioSR denoiser (UNet)
             if coreml_viable():
@@ -186,7 +186,7 @@ class TrinityUpscaler:
                             break
                 self._coreml_denoiser = coreml_unet
                 self._coreml_active   = True
-                print(f"[{self.__class__.__name__}] ✓ GS-ASCEND denoiser on Neural Engine (CoreML)")
+                print(f"[{self.__class__.__name__}] [OK] GS-ASCEND denoiser on Neural Engine (CoreML)")
             else:
                 print(f"[{self.__class__.__name__}] UNet CoreML conversion unavailable — "
                       "running standard DDIM sampling")
@@ -261,7 +261,7 @@ class TrinityUpscaler:
                             break
                 self._onnx_denoiser = onnx_session
                 self._onnx_active = True
-                print(f"[{self.__class__.__name__}] ✓ GS-ASCEND denoiser on {get_provider_name()} (ONNX)")
+                print(f"[{self.__class__.__name__}] [OK] GS-ASCEND denoiser on {get_provider_name()} (ONNX)")
             else:
                 print(f"[{self.__class__.__name__}] UNet ONNX export unavailable")
 
@@ -353,7 +353,7 @@ class TrinityUpscaler:
                 torchaudio.save(out_path, waveform, target_sr)
 
                 out_size = os.path.getsize(out_path)
-                print(f"[{self.__class__.__name__}] ✓ AudioSR upscale complete: "
+                print(f"[{self.__class__.__name__}] [OK] AudioSR upscale complete: "
                       f"{os.path.basename(out_path)} ({out_size / 1024 / 1024:.1f} MB)")
                 return out_path
 
@@ -401,7 +401,7 @@ class TrinityUpscaler:
             torchaudio.save(out_path, resampled, target_sr)
 
             out_size = os.path.getsize(out_path)
-            print(f"[{self.__class__.__name__}] ✓ Resampled {sr}→{target_sr}Hz: "
+            print(f"[{self.__class__.__name__}] [OK] Resampled {sr}→{target_sr}Hz: "
                   f"{os.path.basename(out_path)} ({out_size / 1024 / 1024:.1f} MB)")
             return out_path
 

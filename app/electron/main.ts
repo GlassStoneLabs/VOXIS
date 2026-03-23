@@ -1,6 +1,6 @@
 // VOXIS 4.0 DENSE — Electron Main Process
 // Copyright (c) 2026 Glass Stone LLC. All Rights Reserved.
-// Powered by Trinity V8.1 | Built by Glass Stone
+// Powered by Trinity V8.2 | Built by Glass Stone
 
 import { app, BrowserWindow, dialog, ipcMain, shell, nativeImage, protocol, net } from 'electron';
 import { autoUpdater } from 'electron-updater';
@@ -209,7 +209,7 @@ ipcMain.handle(
     ];
     if (safeMode === 'EXTREME') args.push('--extreme');
 
-    send('trinity-log', '>> [VOXIS] Trinity V8.1 Engine starting...');
+    send('trinity-log', '>> [VOXIS] Trinity V8.2 Engine starting...');
 
     return new Promise<string>((resolve, reject) => {
       let child: ChildProcess;
@@ -332,7 +332,7 @@ ipcMain.handle(
 // IPC: Get version
 // ---------------------------------------------------------------------------
 ipcMain.handle('trinity:getVersion', () => {
-  return 'VOXIS 4.0 DENSE | Trinity V8.1 | Glass Stone LLC © 2026';
+  return 'VOXIS 4.0 DENSE | Trinity V8.2 | Glass Stone LLC © 2026';
 });
 
 // ---------------------------------------------------------------------------

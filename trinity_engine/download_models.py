@@ -72,7 +72,7 @@ def download_voice_restore():
             filename="pytorch_model.bin",
             cache_dir=target_dir
         )
-        print(f"✓ VoiceRestore downloaded: {cache_path}")
+        print(f"[OK] VoiceRestore downloaded: {cache_path}")
         return True
     except Exception as e:
         print(f"✗ VoiceRestore download failed: {e}")
@@ -127,9 +127,9 @@ def check_models():
 
     print()
     if all_present:
-        print("✓ All models present.")
+        print("[OK] All models present.")
     else:
-        print("⚠ Some models missing. Run: python3 download_models.py")
+        print("[!] Some models missing. Run: python3 download_models.py")
     print()
     return all_present
 
@@ -153,7 +153,7 @@ def download_all():
             output_dir=os.path.join(BASE_DIR, "trinity_temp"),
         )
         sep.load_model(model_filename="model_bs_roformer_ep_317_sdr_12.9755.ckpt")
-        print("[✓] BS-RoFormer downloaded and verified.\n")
+        print("[[OK]] BS-RoFormer downloaded and verified.\n")
     except Exception as e:
         print(f"[✗] BS-RoFormer download failed: {e}\n")
 
@@ -164,7 +164,7 @@ def download_all():
     try:
         from df.enhance import init_df
         model, df_state, _ = init_df()
-        print(f"[✓] DeepFilterNet3 downloaded (sample rate: {df_state.sr()}Hz).\n")
+        print(f"[[OK]] DeepFilterNet3 downloaded (sample rate: {df_state.sr()}Hz).\n")
         del model, df_state
     except Exception as e:
         print(f"[✗] DeepFilterNet3 download failed: {e}\n")
@@ -175,7 +175,7 @@ def download_all():
     print("─" * 50)
     try:
         download_voice_restore()
-        print("[✓] VoiceRestore downloaded and verified.\n")
+        print("[[OK]] VoiceRestore downloaded and verified.\n")
     except Exception as e:
         print(f"[✗] VoiceRestore download failed: {e}\n")
 
@@ -191,7 +191,7 @@ def download_all():
 
         from audiosr import build_model
         audiosr_model = build_model(model_name="basic", device="cpu")
-        print(f"[✓] AudioSR downloaded and verified.\n")
+        print(f"[[OK]] AudioSR downloaded and verified.\n")
         del audiosr_model
     except Exception as e:
         print(f"[✗] AudioSR download failed: {e}\n")
@@ -211,7 +211,7 @@ def copy_to_distro():
     dst = os.path.join(DISTRO_DIR, "audio_separator")
     if _dir_has_files(src):
         _mirror_dir(src, dst)
-        print(f"[✓] audio_separator → distro/ ({_dir_size(dst)})")
+        print(f"[[OK]] audio_separator → distro/ ({_dir_size(dst)})")
     else:
         print("[SKIP] audio_separator not found in dependencies/")
 
@@ -225,7 +225,7 @@ def copy_to_distro():
     for df_src in df_paths:
         if _dir_has_files(df_src):
             _mirror_dir(df_src, dst)
-            print(f"[✓] deepfilternet → distro/ ({_dir_size(dst)})")
+            print(f"[[OK]] deepfilternet → distro/ ({_dir_size(dst)})")
             df_found = True
             break
     if not df_found:
@@ -236,7 +236,7 @@ def copy_to_distro():
     vr_dst = os.path.join(DISTRO_DIR, "voicerestore")
     if _dir_has_files(vr_src):
         _mirror_dir(vr_src, vr_dst)
-        print(f"[✓] voicerestore → distro/ ({_dir_size(vr_dst)})")
+        print(f"[[OK]] voicerestore → distro/ ({_dir_size(vr_dst)})")
     else:
         print("[SKIP] VoiceRestore not found in dependencies/")
 
@@ -245,7 +245,7 @@ def copy_to_distro():
     dst = os.path.join(DISTRO_DIR, "audiosr")
     if _dir_has_files(hf_src):
         _mirror_dir(hf_src, dst)
-        print(f"[✓] audiosr → distro/ ({_dir_size(dst)})")
+        print(f"[[OK]] audiosr → distro/ ({_dir_size(dst)})")
     else:
         print("[SKIP] AudioSR not found in dependencies/")
 
@@ -284,7 +284,7 @@ def _mirror_dir(src, dst):
 
 
 def _print_status(key, name, found, path):
-    icon = "✓" if found else "✗"
+    icon = "[OK]" if found else "✗"
     status = "FOUND" if found else "MISSING"
     print(f"  [{icon}] {name:40} {status:8} → {path}")
 
