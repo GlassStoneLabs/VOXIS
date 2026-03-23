@@ -171,11 +171,15 @@ export default function App() {
   const [inputAudioTime,     setInputAudioTime]     = useState(0);
   const [inputAudioDuration, setInputAudioDuration] = useState(0);
 
+  // Input Playback Overrides
+  const [inputVolume, setInputVolume] = useState(1.0);
+
   // Output Playback State
   const [outputPreviewUrl,    setOutputPreviewUrl]    = useState<string | null>(null);
   const [outputIsPlaying,     setOutputIsPlaying]     = useState(false);
   const [outputAudioTime,     setOutputAudioTime]     = useState(0);
   const [outputAudioDuration, setOutputAudioDuration] = useState(0);
+  const [outputVolume, setOutputVolume] = useState(1.0);
 
   // Output state
   const [saveStatus,   setSaveStatus]  = useState<string | null>(null);
@@ -262,6 +266,33 @@ export default function App() {
       if (vocalM) setAutoVocal(parseFloat(vocalM[1]));
     }
   }, []);
+
+  // ── Audio Scrubbing & Volume ───────────────────────────────────────────
+  const handleInputSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!inputAudioRef.current) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const percent = (e.clientX - rect.left) / rect.width;
+    inputAudioRef.current.currentTime = percent * inputAudioDuration;
+    setInputAudioTime(percent * inputAudioDuration);
+  };
+  const handleInputVolume = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const vol = parseFloat(e.target.value);
+    setInputVolume(vol);
+    if (inputAudioRef.current) inputAudioRef.current.volume = vol;
+  };
+
+  const handleOutputSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!outputAudioRef.current) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const percent = (e.clientX - rect.left) / rect.width;
+    outputAudioRef.current.currentTime = percent * outputAudioDuration;
+    setOutputAudioTime(percent * outputAudioDuration);
+  };
+  const handleOutputVolume = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const vol = parseFloat(e.target.value);
+    setOutputVolume(vol);
+    if (outputAudioRef.current) outputAudioRef.current.volume = vol;
+  };
 
   // ── Reset helpers ────────────────────────────────────────────────────────
   const resetOutputState = () => {
@@ -724,12 +755,20 @@ export default function App() {
                   {inputFile.split('.').pop()?.toUpperCase() ?? 'AUDIO'}
                 </div>
               </div>
-              <div className="waveform-bar">
+              <div className="waveform-bar" style={{ cursor: 'pointer' }} onClick={handleInputSeek}>
                 <div className="waveform-inner" />
+                <motion.div 
+                  style={{ position: 'absolute', top: 0, bottom: 0, left: 0, background: 'rgba(255,255,255,0.2)', width: `${inputAudioDuration ? (inputAudioTime / inputAudioDuration) * 100 : 0}%` }} 
+                />
               </div>
               <div className="file-duration">
                 {fmtTime(inputAudioTime)} / {fmtTime(inputAudioDuration)}
               </div>
+              <input 
+                type="range" min="0" max="1" step="0.01" 
+                value={inputVolume} onChange={handleInputVolume} 
+                className="vol-slider" title="Volume"
+              />
               <audio
                 ref={inputAudioRef}
                 src={inputPreviewUrl || undefined}
@@ -857,7 +896,7 @@ export default function App() {
                       >
                         {outputIsPlaying ? '||' : '>>'}
                       </motion.button>
-                      <div className="waveform-bar" style={{ flex: 1, minHeight: '20px', position: 'relative' }}>
+                      <div className="waveform-bar" style={{ flex: 1, minHeight: '20px', position: 'relative', cursor: 'pointer' }} onClick={handleOutputSeek}>
                         <div className="waveform-inner" />
                         <motion.div 
                           style={{ position: 'absolute', top: 0, bottom: 0, left: 0, background: 'rgba(0,0,0,0.15)', width: `${outputAudioDuration ? (outputAudioTime / outputAudioDuration) * 100 : 0}%` }} 
@@ -866,6 +905,11 @@ export default function App() {
                       <div className="file-duration" style={{ fontSize: '0.85rem' }}>
                         {fmtTime(outputAudioTime)} / {fmtTime(outputAudioDuration)}
                       </div>
+                      <input 
+                        type="range" min="0" max="1" step="0.01" 
+                        value={outputVolume} onChange={handleOutputVolume} 
+                        className="vol-slider" title="Volume"
+                      />
                       <audio
                         ref={outputAudioRef}
                         src={outputPreviewUrl || undefined}
