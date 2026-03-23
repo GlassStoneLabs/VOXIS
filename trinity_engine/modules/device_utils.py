@@ -1,6 +1,14 @@
 import platform
 import torch
 
+# ── GLOBAL PYTORCH OPTIMIZATIONS ──
+# Accelerate matrix multiplication by ~2-3x on Ampere/Ada GPUs via TensorFloat32 
+# Native PyTorch 2.x feature; zero degradation to perceivable audio structures.
+if torch.cuda.is_available():
+    torch.set_float32_matmul_precision("high")
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+
 class DeviceOptimizer:
     """
     Utility class for cross-platform model hardware acceleration in Trinity V8.2.
