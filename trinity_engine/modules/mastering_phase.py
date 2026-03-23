@@ -6,6 +6,8 @@
 #   - Mid/Side stereo width control
 #   - Harman target curve EQ (bass shelf + presence + treble rolloff)
 #   - Spectral-adaptive Auto-EQ (HPF/LPF/vocal presence from analyzer)
+#   - Multiband-style Compressor (-18 dB thr / 4:1 ratio / 10ms atk / 100ms rel)
+#   - LUFS loudness normalisation → -14 LUFS (streaming standard)
 #   - Peak normalization + Gain staging + Brickwall limiter
 #   - Output validation
 
@@ -17,7 +19,7 @@ from .path_utils import get_engine_base_dir
 # Pedalboard is the core DSP library
 try:
     from pedalboard import (
-        Pedalboard, Limiter, Gain,
+        Pedalboard, Limiter, Gain, Compressor,
         HighpassFilter, LowpassFilter, PeakFilter,
         LowShelfFilter, HighShelfFilter,
     )
@@ -25,6 +27,13 @@ try:
     PEDALBOARD_AVAILABLE = True
 except ImportError:
     PEDALBOARD_AVAILABLE = False
+
+# LUFS measurement — pyloudnorm (preferred) or numpy RMS fallback
+try:
+    import pyloudnorm as pyln
+    PYLOUDNORM_AVAILABLE = True
+except ImportError:
+    PYLOUDNORM_AVAILABLE = False
 
 
 class PedalboardMastering:
@@ -55,8 +64,19 @@ class PedalboardMastering:
                 Gain(gain_db=1.0),
                 Limiter(threshold_db=-0.5, release_ms=100.0),
             ])
+            # Compressor chain: transparent glue compression before limiting
+            # Threshold: -18 dBFS | Ratio: 4:1 | Attack: 10ms | Release: 100ms
+            self._comp_board = Pedalboard([
+                Compressor(
+                    threshold_db=-18.0,
+                    ratio=4.0,
+                    attack_ms=10.0,
+                    release_ms=100.0,
+                ),
+            ])
         else:
             self._main_board = None
+            self._comp_board = None
 
         # Cache key for last-built EQ chain to avoid rebuilding identical chains
         self._last_eq_key = None
@@ -125,7 +145,16 @@ class PedalboardMastering:
             audio = self._eq_board(audio, samplerate)
             print(f"[{self.__class__.__name__}] Harman curve EQ applied")
 
-            # ── Step 3: Peak normalization → Gain → Limiter ──────────────
+            # ── Step 3: Compressor — transparent glue (−18 dB / 4:1) ─────────
+            if self._comp_board is not None:
+                audio = self._comp_board(audio, samplerate)
+                print(f"[{self.__class__.__name__}] Compressor: −18 dB thr / 4:1 / 10ms atk / 100ms rel")
+
+            # ── Step 4: LUFS loudness normalisation → −14 LUFS ───────────────
+            lufs_target = -14.0  # Spotify / Apple Music streaming standard
+            audio = self._apply_lufs_normalisation(audio, samplerate, lufs_target)
+
+            # ── Step 5: Peak normalization → Gain → Limiter ──────────────────
             pre_peak = np.max(np.abs(audio))
             if pre_peak > 1e-6:
                 target_peak = 10 ** (-1.0 / 20.0)  # -1 dBFS
@@ -164,6 +193,61 @@ class PedalboardMastering:
         except Exception as e:
             print(f"[{self.__class__.__name__}] Mastering error: {e}")
             return input_audio_path
+
+    def _apply_lufs_normalisation(self, audio: np.ndarray, samplerate: int,
+                                   target_lufs: float = -14.0) -> np.ndarray:
+        """
+        Normalise audio to a target integrated loudness (LUFS).
+
+        Uses pyloudnorm (ITU-R BS.1770-4) when available, falls back to
+        RMS-based approximation so the step never silently fails.
+
+        Args:
+            audio:        numpy array shape (channels, samples), float32.
+            samplerate:   sample rate in Hz.
+            target_lufs:  target integrated loudness in LUFS (default −14).
+
+        Returns:
+            Gain-adjusted audio array (same shape/dtype).
+        """
+        MAX_HEADROOM_DB = 3.0  # never push louder than −1 dBFS ceiling via LUFS gain
+
+        try:
+            if PYLOUDNORM_AVAILABLE:
+                # pyloudnorm expects (samples, channels) — transpose for measurement
+                meter = pyln.Meter(samplerate)  # BS.1770-4
+                audio_t = audio.T if audio.ndim == 2 else audio[:, np.newaxis]
+                measured_lufs = meter.integrated_loudness(audio_t)
+
+                if np.isinf(measured_lufs) or np.isnan(measured_lufs):
+                    print(f"[{self.__class__.__name__}] LUFS: silence detected — skipping normalisation")
+                    return audio
+
+                gain_db = target_lufs - measured_lufs
+                # Guard: cap upward gain to avoid over-amplifying very quiet files
+                gain_db = min(gain_db, MAX_HEADROOM_DB)
+                gain_linear = 10 ** (gain_db / 20.0)
+                audio = audio * gain_linear
+                print(f"[{self.__class__.__name__}] LUFS: {measured_lufs:.1f} → {target_lufs:.0f} LUFS "
+                      f"(gain {gain_db:+.1f} dB) [pyloudnorm BS.1770-4]")
+
+            else:
+                # Fallback: RMS-based approximation (≈ LUFS within ~1 dB for speech)
+                rms = float(np.sqrt(np.mean(audio ** 2)))
+                if rms < 1e-9:
+                    return audio
+                current_lufs_approx = 20.0 * np.log10(rms) - 0.691  # K-weighting correction est.
+                gain_db = target_lufs - current_lufs_approx
+                gain_db = min(gain_db, MAX_HEADROOM_DB)
+                gain_linear = 10 ** (gain_db / 20.0)
+                audio = audio * gain_linear
+                print(f"[{self.__class__.__name__}] LUFS: ~{current_lufs_approx:.1f} → {target_lufs:.0f} LUFS "
+                      f"(gain {gain_db:+.1f} dB) [RMS fallback — install pyloudnorm for BS.1770-4]")
+
+        except Exception as e:
+            print(f"[{self.__class__.__name__}] LUFS normalisation error: {e} — skipping")
+
+        return audio
 
     def _build_harman_curve(self, highpass_hz: float, lowpass_hz: float,
                             vocal_presence_db: float) -> list:

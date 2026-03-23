@@ -156,7 +156,7 @@ step 3 "Installing ML Dependencies" "torch, torchaudio, audio-separator, deepfil
 pip install torch==2.6.0 torchaudio==2.6.0 torchvision==0.21.0 --quiet
 
 # Core audio tools
-pip install pedalboard numpy soundfile librosa --quiet
+pip install pedalboard numpy soundfile librosa pyloudnorm --quiet
 
 # Source separation
 pip install "audio-separator[cpu]>=0.41.0" --quiet
@@ -187,17 +187,32 @@ fi
 
 ok "All dependencies installed"
 
-# ── Step 4: Install Models from distro/ ─────────────────────────
-step 4 "Installing ML Models" "BS-RoFormer, VoiceRestore, AudioSR (~13 GB)..."
+# ── Step 4: Install & Download ML Models ──────────────────────
+step 4 "Installing ML Models" "BS-RoFormer, VoiceRestore, AudioSR, BigVGAN, XLS-R, Diff-HierVC (~9.7 GB)..."
 
 if [ -d "$ENGINE_DIR/distro/models" ]; then
     cd "$ENGINE_DIR"
     python3 setup_models.py
     ok "Models installed from distro/"
 else
-    warn "distro/models/ not found. Models will download on first run (~12GB)."
-    warn "Or run later: cd $ENGINE_DIR && python3 download_models.py"
+    echo ""
+    echo -e "    ${BOLD}No local model cache found — downloading from HuggingFace...${NC}"
+    echo -e "    ${YELLOW}This will download ~9.7 GB of ML models.${NC}"
+    echo -e "    ${YELLOW}Models are cached at ~/.voxis/dependencies/models/${NC}"
+    echo ""
+    cd "$ENGINE_DIR"
+    python3 model_downloader.py --download
+    if [ $? -eq 0 ]; then
+        ok "All models downloaded successfully"
+    else
+        warn "Some models may have failed. Retry with:"
+        warn "  cd $ENGINE_DIR && python3 model_downloader.py --download"
+    fi
 fi
+
+# Verify model status
+cd "$ENGINE_DIR"
+python3 model_registry.py 2>/dev/null || true
 
 # ── Step 5: Verify Pipeline ─────────────────────────────────────
 step 5 "Verifying Trinity V8.2 Pipeline" "Testing all module imports..."

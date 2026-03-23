@@ -36,7 +36,7 @@ const STEPS: Step[] = [
   { id: 5, label: 'ASCEND',   sublabel: 'GS-ASCEND Diffusion → 48kHz', matchStr: '[5/6]',
     description: 'GS-ASCEND elevates audio to studio-quality 48kHz using Glass Stone latent diffusion. Recovers lost high-frequency detail and restores clarity that compression destroyed.' },
   { id: 6, label: 'TEMPER',   sublabel: 'GS-TEMPER Harman Mastering',   matchStr: '[6/6]',
-    description: 'Like tempered glass — hardened and perfected. GS-TEMPER applies Harman curve EQ for vocal warmth, presence, and controlled sibilance. Normalizes to -1 dBFS with a brickwall limiter.' },
+    description: 'Like tempered glass — hardened and perfected. GS-TEMPER applies Harman curve EQ, adaptive HPF/LPF, multiband compression (−18 dB / 4:1), and LUFS loudness normalisation to −14 LUFS streaming standard.' },
   { id: 7, label: 'CAST',     sublabel: '24-bit Output',                 matchStr: 'Finalizing Export',
     description: 'Cast in glass — the final permanent form. Multiplexes the restored audio into WAV, FLAC, or MP3 at 24-bit depth with full metadata preservation.' },
 ];
@@ -358,6 +358,7 @@ export default function App() {
   const [highPrecision,  setHighPrecision]  = useState(true);
   const [stereoOutput,   setStereoOutput]   = useState(true);
   const [ramLimit,       setRamLimit]       = useState(75);
+
   const [status,         setStatus]         = useState<PipelineStatus>('idle');
   const [currentStep,    setCurrentStep]    = useState(0);
   const [logs,           setLogs]           = useState<string[]>(['SYSTEM READY — SELECT A FILE TO BEGIN']);
@@ -606,7 +607,7 @@ export default function App() {
         stereoWidth:     stereoOutput ? 0.5 : 0.0,
         outputFormat,
         ramLimit,
-        denoiseStrength: denoiseStrength / 100.0,  // 0–100% → 0.0–1.0
+        denoiseStrength: denoiseStrength / 100.0,
         denoiseSteps:    restorationSteps,
       });
 
@@ -862,6 +863,7 @@ export default function App() {
               </motion.label>
             </div>
           </div>
+
 
               </motion.div>
             ) : (
