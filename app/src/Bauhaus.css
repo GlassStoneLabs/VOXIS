@@ -1182,6 +1182,9 @@ input:disabled + .toggle-track {
 .sidebar-controls {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .sidebar-telemetry {
@@ -1314,27 +1317,49 @@ input:disabled + .toggle-track {
   background: transparent;
   position: relative;
   overflow: hidden;
+  transition: border-color 0.3s cubic-bezier(0.25, 1, 0.5, 1),
+              background 0.3s cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 .stage-block.active {
   border-color: var(--stage-color, var(--black));
-  background: rgba(255,255,255,0.7);
+  background: rgba(255,255,255,0.75);
   box-shadow: 3px 3px 0 var(--black);
 }
 
 .stage-block.done {
   background: transparent;
+  border-left: 3px solid var(--stage-color, var(--gray-2));
+}
+
+/* Bauhaus diagonal stripe sweep — slides across active cards */
+.stage-block-stripe {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 6px,
+    var(--stage-color) 6px,
+    var(--stage-color) 7px
+  );
+  opacity: 0.08;
+  width: 100%;
 }
 
 /* Left accent strip */
 .stage-block-accent {
   position: absolute;
   left: 0; top: 0; bottom: 0;
-  width: 3px;
+  width: 4px;
   z-index: 3;
   flex-shrink: 0;
+  transform-origin: center;
 }
 
+/* Bauhaus geometric badge shapes */
 .stage-block-num {
   width: 1.75rem;
   height: 1.75rem;
@@ -1348,6 +1373,26 @@ input:disabled + .toggle-track {
   flex-shrink: 0;
   z-index: 2;
   letter-spacing: 0;
+  transition: border-radius 0.3s, background 0.3s;
+}
+
+/* Circle shape (stages 1, 4, 7) */
+.stage-block-num.bauhaus-circle {
+  border-radius: 50%;
+}
+
+/* Square shape (stages 2, 5) */
+.stage-block-num.bauhaus-square {
+  border-radius: 2px;
+}
+
+/* Triangle-ish shape (stages 3, 6) — clipped pentagon with pointed top */
+.stage-block-num.bauhaus-triangle {
+  border-radius: 2px;
+  clip-path: polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%);
+  border: none;
+  width: 1.9rem;
+  height: 1.9rem;
 }
 
 .stage-block-content {
@@ -1359,10 +1404,10 @@ input:disabled + .toggle-track {
 .stage-block-title {
   font-size: 0.88rem;
   font-weight: 900;
-  letter-spacing: 1.2px;
   text-transform: uppercase;
   color: var(--black);
   line-height: 1.1;
+  transition: letter-spacing 0.4s cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 .stage-block-sub {
@@ -1379,6 +1424,221 @@ input:disabled + .toggle-track {
   inset: 0;
   z-index: 1;
   pointer-events: none;
+}
+
+/* Done flash — Bauhaus ring that collapses inward */
+.stage-block-done-flash {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  border: 3px solid;
+  border-radius: 0;
+}
+
+/* ── BAUHAUS AUDIO PLAYER ── */
+.bh-player {
+  border: var(--border-bold) solid var(--black);
+  box-shadow: 4px 4px 0 var(--black);
+  background: var(--white);
+  padding: 1rem 1.1rem 0.85rem;
+  margin-bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.bh-player-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.bh-player-label {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  font-weight: 900;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--black);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 70%;
+}
+
+.bh-player-time {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--gray-3);
+  flex-shrink: 0;
+}
+
+/* Waveform scrubber */
+.bh-player-scrubber {
+  position: relative;
+  height: 48px;
+  background: var(--gray-1);
+  border: 2px solid var(--black);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.bh-waveform {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 100%;
+  padding: 4px 6px;
+  pointer-events: none;
+}
+
+.bh-waveform-bar {
+  flex: 1;
+  min-width: 3px;
+  border-radius: 1px;
+  transition: background-color 0.05s, opacity 0.05s;
+}
+
+/* Playhead line */
+.bh-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Controls row */
+.bh-player-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+/* Bauhaus play/pause button — circle */
+.bh-play-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: var(--border-bold) solid var(--black);
+  color: var(--white);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 0.9rem;
+  font-weight: 900;
+  font-family: var(--font);
+  line-height: 1;
+  padding: 0;
+  box-shadow: 2px 2px 0 var(--black);
+  transition: var(--trans);
+}
+
+.bh-play-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.bh-icon-play {
+  margin-left: 2px;
+}
+
+.bh-icon-pause {
+  letter-spacing: -1px;
+  font-size: 0.75rem;
+}
+
+/* Volume group */
+.bh-volume-group {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.bh-vol-label {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+  color: var(--gray-3);
+  flex-shrink: 0;
+}
+
+.bh-vol-value {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--player-color, var(--blue));
+  flex-shrink: 0;
+  width: 2.2ch;
+  text-align: right;
+}
+
+.bh-vol-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  height: 4px;
+  background: var(--gray-1);
+  border: 1px solid var(--black);
+  outline: none;
+  cursor: pointer;
+  border-radius: 0;
+}
+
+.bh-vol-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  background: var(--player-color, var(--blue));
+  border: 2px solid var(--black);
+  border-radius: 0;
+  cursor: pointer;
+  box-shadow: 1px 1px 0 var(--black);
+}
+
+/* File strip — slim now that player is separate */
+.file-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.55rem 1rem;
+  background: var(--black);
+  border-bottom: var(--border-w) solid var(--black);
+  min-height: 0;
+}
+
+.file-change-btn {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  background: transparent;
+  border: 1px solid var(--gray-2);
+  color: var(--gray-2);
+  padding: 0.2rem 0.55rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: var(--trans);
+}
+
+.file-change-btn:hover:not(:disabled) {
+  border-color: var(--yellow);
+  color: var(--yellow);
+}
+
+.file-change-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 
 /* ── BEFORE / AFTER PLAYER ── */

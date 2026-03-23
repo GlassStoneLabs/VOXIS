@@ -99,6 +99,9 @@ const AnimatedStageProgress = ({ currentStep }: { currentStep: number }) => {
   const progressPct = currentStep === 0 ? 0 : Math.round((currentStep / STEPS.length) * 100);
   const activeColor = currentStep > 0 ? STAGE_COLORS[currentStep - 1] : STAGE_COLORS[0];
 
+  // Bauhaus geometric shapes per stage
+  const BAUHAUS_SHAPES = ['circle', 'square', 'triangle', 'circle', 'square', 'triangle', 'circle'] as const;
+
   return (
     <div className="stage-progress-container">
       {/* Overall progress bar */}
@@ -120,59 +123,222 @@ const AnimatedStageProgress = ({ currentStep }: { currentStep: number }) => {
           const isActive = currentStep === step.id;
           const isDone = currentStep > step.id;
           const color = STAGE_COLORS[i];
+          const shape = BAUHAUS_SHAPES[i];
 
           return (
             <motion.div
               key={step.id}
               className={`stage-block ${isActive ? 'active' : ''} ${isDone ? 'done' : ''}`}
               style={{ '--stage-color': color } as React.CSSProperties}
-              animate={{ opacity: isActive ? 1 : isDone ? 0.8 : 0.2 }}
-              transition={{ duration: 0.25 }}
+              initial={{ opacity: 0.2, x: -6 }}
+              animate={{
+                opacity: isActive ? 1 : isDone ? 0.85 : 0.2,
+                x: 0,
+                scale: isActive ? 1 : 0.98,
+              }}
+              transition={{ duration: 0.3, ease: [0.25, 1, 0.5, 1] }}
             >
-              {/* Colored left accent strip */}
-              <div className="stage-block-accent" style={{ backgroundColor: isDone || isActive ? color : 'transparent' }} />
+              {/* Bauhaus diagonal stripe sweep (active only) */}
+              {isActive && (
+                <motion.div
+                  className="stage-block-stripe"
+                  style={{ '--stage-color': color } as React.CSSProperties}
+                  initial={{ x: '-100%' }}
+                  animate={{ x: '200%' }}
+                  transition={{ repeat: Infinity, duration: 2.5, ease: 'linear' }}
+                />
+              )}
 
-              {/* Number / checkmark badge */}
-              <div
-                className="stage-block-num"
+              {/* Colored left accent strip — animated height on active */}
+              <motion.div
+                className="stage-block-accent"
+                style={{ backgroundColor: isDone || isActive ? color : 'transparent' }}
+                animate={{ scaleY: isActive ? 1 : isDone ? 1 : 0 }}
+                transition={{ duration: 0.3 }}
+              />
+
+              {/* Bauhaus geometric number badge */}
+              <motion.div
+                className={`stage-block-num bauhaus-${shape}`}
                 style={{
                   backgroundColor: isDone || isActive ? color : 'transparent',
                   color: isDone || isActive ? '#fff' : 'var(--gray-2)',
                   borderColor: isDone || isActive ? color : 'var(--gray-2)',
                 }}
+                animate={{
+                  rotate: isActive ? [0, 6, -6, 0] : 0,
+                  scale: isActive ? [1, 1.12, 1] : isDone ? 1 : 0.9,
+                }}
+                transition={isActive
+                  ? { rotate: { repeat: Infinity, duration: 3, ease: 'easeInOut' },
+                      scale: { repeat: Infinity, duration: 1.5, ease: 'easeInOut' } }
+                  : { duration: 0.25 }
+                }
               >
                 {isDone ? '✓' : step.id}
-              </div>
+              </motion.div>
 
               <div className="stage-block-content">
-                <div className="stage-block-title" style={{ color: isActive ? color : undefined }}>
+                <motion.div
+                  className="stage-block-title"
+                  style={{ color: isActive ? color : undefined }}
+                  animate={{ letterSpacing: isActive ? '2px' : '1.2px' }}
+                  transition={{ duration: 0.4 }}
+                >
                   {step.label}
-                </div>
+                </motion.div>
                 {isActive && (
                   <motion.div
                     className="stage-block-sub"
-                    initial={{ opacity: 0, y: 3 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.08 }}
+                    initial={{ opacity: 0, y: 4, x: -8 }}
+                    animate={{ opacity: 1, y: 0, x: 0 }}
+                    transition={{ delay: 0.1, duration: 0.3 }}
                   >
                     {step.sublabel}
                   </motion.div>
                 )}
               </div>
 
-              {/* Active pulse overlay */}
+              {/* Bauhaus color pulse overlay */}
               {isActive && (
                 <motion.div
                   className="stage-block-pulse"
                   style={{ backgroundColor: color }}
-                  animate={{ opacity: [0.06, 0.15, 0.06] }}
-                  transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
+                  animate={{ opacity: [0.04, 0.18, 0.04] }}
+                  transition={{ repeat: Infinity, duration: 1.8, ease: 'easeInOut' }}
+                />
+              )}
+
+              {/* Done: Bauhaus checkmark flash */}
+              {isDone && (
+                <motion.div
+                  className="stage-block-done-flash"
+                  style={{ borderColor: color }}
+                  initial={{ opacity: 0.6, scale: 1.5 }}
+                  animate={{ opacity: 0, scale: 1 }}
+                  transition={{ duration: 0.5 }}
                 />
               )}
             </motion.div>
           );
         })}
       </div>
+    </div>
+  );
+};
+
+// ── BauhausPlayer ────────────────────────────────────────────────────────────
+
+interface BauhausPlayerProps {
+  label: string;
+  src: string | null;
+  audioRef: React.RefObject<HTMLAudioElement | null>;
+  isPlaying: boolean;
+  currentTime: number;
+  duration: number;
+  volume: number;
+  accentColor: string;
+  onTogglePlay: () => void;
+  onSeek: (e: React.MouseEvent<HTMLDivElement>) => void;
+  onVolume: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onTimeUpdate: () => void;
+  onLoadedMetadata: () => void;
+  onPlay: () => void;
+  onPause: () => void;
+  onEnded: () => void;
+}
+
+const BauhausPlayer = ({
+  label, src, audioRef, isPlaying, currentTime, duration,
+  volume, accentColor,
+  onTogglePlay, onSeek, onVolume,
+  onTimeUpdate, onLoadedMetadata, onPlay, onPause, onEnded,
+}: BauhausPlayerProps) => {
+  const pct = duration > 0 ? (currentTime / duration) * 100 : 0;
+
+  // Generate a static pseudo-waveform from the label string (deterministic bars)
+  const bars = Array.from({ length: 40 }, (_, i) => {
+    const seed = (label.charCodeAt(i % label.length) * 7 + i * 13) % 100;
+    return 20 + (seed % 65);
+  });
+
+  return (
+    <div className="bh-player" style={{ '--player-color': accentColor } as React.CSSProperties}>
+      {/* Header row */}
+      <div className="bh-player-header">
+        <span className="bh-player-label">{label}</span>
+        <span className="bh-player-time">{fmtTime(currentTime)} / {fmtTime(duration)}</span>
+      </div>
+
+      {/* Waveform scrubber */}
+      <div className="bh-player-scrubber" onClick={onSeek} title="Seek">
+        {/* Static waveform bars */}
+        <div className="bh-waveform">
+          {bars.map((h, i) => {
+            const barPct = (i / bars.length) * 100;
+            const played = barPct <= pct;
+            return (
+              <div
+                key={i}
+                className="bh-waveform-bar"
+                style={{
+                  height: `${h}%`,
+                  backgroundColor: played ? accentColor : 'var(--gray-2)',
+                  opacity: played ? 1 : 0.4,
+                }}
+              />
+            );
+          })}
+        </div>
+        {/* Playhead */}
+        <motion.div
+          className="bh-playhead"
+          style={{ left: `${pct}%`, backgroundColor: accentColor }}
+        />
+      </div>
+
+      {/* Controls row */}
+      <div className="bh-player-controls">
+        {/* Play/pause — Bauhaus circle button */}
+        <motion.button
+          className="bh-play-btn"
+          style={{ backgroundColor: accentColor }}
+          onClick={onTogglePlay}
+          whileHover={{ scale: 1.08 }}
+          whileTap={{ scale: 0.92 }}
+          disabled={!src}
+        >
+          {isPlaying ? (
+            <span className="bh-icon-pause">▐▐</span>
+          ) : (
+            <span className="bh-icon-play">▶</span>
+          )}
+        </motion.button>
+
+        {/* Volume label + slider */}
+        <div className="bh-volume-group">
+          <span className="bh-vol-label">VOL</span>
+          <input
+            type="range" min="0" max="1" step="0.01"
+            value={volume}
+            onChange={onVolume}
+            className="bh-vol-slider"
+            style={{ '--player-color': accentColor } as React.CSSProperties}
+          />
+          <span className="bh-vol-value">{Math.round(volume * 100)}</span>
+        </div>
+      </div>
+
+      {/* Hidden audio element */}
+      <audio
+        ref={audioRef}
+        src={src || undefined}
+        onPlay={onPlay}
+        onPause={onPause}
+        onEnded={onEnded}
+        onTimeUpdate={onTimeUpdate}
+        onLoadedMetadata={onLoadedMetadata}
+      />
     </div>
   );
 };
@@ -604,6 +770,25 @@ export default function App() {
             </div>
           </div>
 
+          {/* RAM Limit */}
+          <div className="sb-section sb-section-ram">
+            <div className="sb-label-row">
+              <span className="sb-label no-mb">RAM USAGE LIMIT</span>
+              <span className="sb-value val-ram">{ramLimit}%</span>
+            </div>
+            <input
+              type="range" min={25} max={100} step={5} value={ramLimit}
+              onChange={e => setRamLimit(+e.target.value)}
+              className="bauhaus-range range-ram"
+              disabled={isRunning}
+            />
+            <div className="ram-hint">
+              {ramLimit <= 50 ? 'LOW — Slower, saves memory'
+               : ramLimit <= 75 ? 'BALANCED — Recommended'
+               : 'MAX — Fastest, high memory'}
+            </div>
+          </div>
+
           {/* Denoise Strength */}
           <div className="sb-section">
             <div className="sb-label-row">
@@ -678,24 +863,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* RAM Limit */}
-          <div className="sb-section sb-section-ram">
-            <div className="sb-label-row">
-              <span className="sb-label no-mb">RAM USAGE LIMIT</span>
-              <span className="sb-value val-ram">{ramLimit}%</span>
-            </div>
-            <input
-              type="range" min={25} max={100} step={5} value={ramLimit}
-              onChange={e => setRamLimit(+e.target.value)}
-              className="bauhaus-range range-ram"
-              disabled={isRunning}
-            />
-            <div className="ram-hint">
-              {ramLimit <= 50 ? 'LOW — Slower, saves memory'
-               : ramLimit <= 75 ? 'BALANCED — Recommended'
-               : 'MAX — Fastest, high memory'}
-            </div>
-          </div>
               </motion.div>
             ) : (
               <motion.div
@@ -763,43 +930,21 @@ export default function App() {
           {/* ── File Strip ── */}
           {inputFile ? (
             <div className="file-strip">
-              <motion.button
-                className="file-play-btn"
-                onClick={toggleInputPlay}
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-              >
-                {inputIsPlaying ? '||' : '▶'}
-              </motion.button>
               <div className="file-info">
                 <div className="file-name">{basename(inputFile).toUpperCase()}</div>
                 <div className="file-meta">
                   {inputFile.split('.').pop()?.toUpperCase() ?? 'AUDIO'}
                 </div>
               </div>
-              <div className="waveform-bar" style={{ cursor: 'pointer' }} onClick={handleInputSeek}>
-                <div className="waveform-inner" />
-                <motion.div 
-                  style={{ position: 'absolute', top: 0, bottom: 0, left: 0, background: 'rgba(255,255,255,0.2)', width: `${inputAudioDuration ? (inputAudioTime / inputAudioDuration) * 100 : 0}%` }} 
-                />
-              </div>
-              <div className="file-duration">
-                {fmtTime(inputAudioTime)} / {fmtTime(inputAudioDuration)}
-              </div>
-              <input 
-                type="range" min="0" max="1" step="0.01" 
-                value={inputVolume} onChange={handleInputVolume} 
-                className="vol-slider" title="Volume"
-              />
-              <audio
-                ref={inputAudioRef}
-                src={inputPreviewUrl || undefined}
-                onPlay={() => setInputIsPlaying(true)}
-                onPause={() => setInputIsPlaying(false)}
-                onEnded={() => { setInputIsPlaying(false); setInputAudioTime(0); }}
-                onTimeUpdate={() => setInputAudioTime(inputAudioRef.current?.currentTime ?? 0)}
-                onLoadedMetadata={() => setInputAudioDuration(inputAudioRef.current?.duration ?? 0)}
-              />
+              <motion.button
+                className="file-change-btn"
+                onClick={handleSelectFile}
+                disabled={isRunning}
+                whileHover={!isRunning ? { scale: 1.04 } : {}}
+                whileTap={!isRunning ? { scale: 0.96 } : {}}
+              >
+                CHANGE
+              </motion.button>
             </div>
           ) : (
             <div className="file-strip file-strip-empty">
@@ -824,6 +969,28 @@ export default function App() {
                   exit={{ opacity: 0, scale: 0.99 }}
                   transition={{ duration: 0.15 }}
                 >
+
+                {/* ── Bauhaus Audio Player (shown when file loaded) ── */}
+                {inputFile && !isRunning && (
+                  <BauhausPlayer
+                    label={basename(inputFile).toUpperCase()}
+                    src={inputPreviewUrl}
+                    audioRef={inputAudioRef}
+                    isPlaying={inputIsPlaying}
+                    currentTime={inputAudioTime}
+                    duration={inputAudioDuration}
+                    volume={inputVolume}
+                    accentColor={STAGE_COLORS[0]}
+                    onTogglePlay={toggleInputPlay}
+                    onSeek={handleInputSeek}
+                    onVolume={handleInputVolume}
+                    onPlay={() => setInputIsPlaying(true)}
+                    onPause={() => setInputIsPlaying(false)}
+                    onEnded={() => { setInputIsPlaying(false); setInputAudioTime(0); }}
+                    onTimeUpdate={() => setInputAudioTime(inputAudioRef.current?.currentTime ?? 0)}
+                    onLoadedMetadata={() => setInputAudioDuration(inputAudioRef.current?.duration ?? 0)}
+                  />
+                )}
 
                 {/* ── Pipeline Guide (idle state) ── */}
                 {!isRunning && status !== 'error' && (
