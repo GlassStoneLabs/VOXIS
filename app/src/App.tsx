@@ -393,6 +393,7 @@ export default function App() {
     });
     unlistenDoneRef.current = await listen<string>('trinity-done', (event) => {
       setOutputFile(event.payload);
+      setOutputPreviewUrl(convertFileSrc(event.payload));
     });
 
     try {
@@ -410,6 +411,7 @@ export default function App() {
         setStatus('done');
         setCurrentStep(STEPS.length);
         setOutputFile(result);
+        setOutputPreviewUrl(convertFileSrc(result));
         setExportFormat(outputFormat);
         appendLog('>> [VOXIS] RESTORATION COMPLETE');
         appendLog(`>> OUTPUT: ${basename(result)}`);
@@ -502,10 +504,10 @@ export default function App() {
               <motion.div
                 key="controls"
                 className="sidebar-controls"
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.3 }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.12 }}
               >
 {/* Processing Mode */}
           <div className="sb-section">
@@ -680,10 +682,10 @@ export default function App() {
               <motion.div
                 key="telemetry"
                 className="sidebar-telemetry"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
-                transition={{ duration: 0.3 }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.12 }}
               >
                 <div className="telemetry-header">
                   VOXIS TELEMETRY
@@ -716,18 +718,19 @@ export default function App() {
                 )}
 
                 <div className="log-viewer sidebar-logs" ref={logBoxRef}>
-                  <AnimatePresence>
-                    {logs.map((line, i) => (
-                      <motion.div
-                        key={i}
-                        className={`log-line ${line.includes('[ERROR]') ? 'log-error' : line.startsWith('>>') ? 'log-step' : ''}`}
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                      >
-                        {line}
-                      </motion.div>
-                    ))}
-                  </AnimatePresence>
+                  {logs.map((line, i) => (
+                    <div
+                      key={i}
+                      className={`log-line ${
+                        line.includes('[ERROR]') || line.includes('[!]') ? 'log-error'
+                        : line.includes('[OK]') || line.includes('✓') || line.includes('Complete') ? 'log-ok'
+                        : line.startsWith('>>') ? 'log-step'
+                        : ''
+                      }`}
+                    >
+                      {line}
+                    </div>
+                  ))}
                 </div>
               </motion.div>
             )}
@@ -799,8 +802,8 @@ export default function App() {
                 <motion.div
                   key="pipeline"
                   className="pipeline-content"
-                  exit={{ opacity: 0, scale: 0.98, filter: "blur(5px)" }}
-                  transition={{ duration: 0.5, ease: "easeInOut" }}
+                  exit={{ opacity: 0, scale: 0.99 }}
+                  transition={{ duration: 0.15 }}
                 >
 
                 {/* ── Pipeline Guide (idle state) ── */}
@@ -886,40 +889,41 @@ export default function App() {
                     <h2 className="completion-title">RESTORATION COMPLETE</h2>
                     <p className="completion-sub">48kHz / Stereo</p>
 
-                    {/* Output Playback */}
-                    <div className="output-playback-container" style={{ margin: '1rem 0', display: 'flex', alignItems: 'center', gap: '1rem', background: 'var(--gray-1)', padding: '0.75rem', border: 'var(--border-bold) solid var(--black)', width: '100%' }}>
-                      <motion.button
-                        className="file-play-btn"
-                        onClick={toggleOutputPlay}
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                      >
-                        {outputIsPlaying ? '||' : '>>'}
-                      </motion.button>
-                      <div className="waveform-bar" style={{ flex: 1, minHeight: '20px', position: 'relative', cursor: 'pointer' }} onClick={handleOutputSeek}>
-                        <div className="waveform-inner" />
-                        <motion.div 
-                          style={{ position: 'absolute', top: 0, bottom: 0, left: 0, background: 'rgba(0,0,0,0.15)', width: `${outputAudioDuration ? (outputAudioTime / outputAudioDuration) * 100 : 0}%` }} 
-                        />
+                    {/* Before / After Comparison Players */}
+                    <div className="ba-player">
+                      {/* BEFORE row */}
+                      <div className="ba-row">
+                        <span className="ba-label">BEFORE</span>
+                        <button className="ba-play" onClick={toggleInputPlay}>
+                          {inputIsPlaying ? '▐▐' : '▶'}
+                        </button>
+                        <div className="ba-bar" onClick={handleInputSeek}>
+                          <div className="ba-progress" style={{ width: `${inputAudioDuration ? (inputAudioTime / inputAudioDuration) * 100 : 0}%` }} />
+                        </div>
+                        <span className="ba-time">{fmtTime(inputAudioTime)} / {fmtTime(inputAudioDuration)}</span>
                       </div>
-                      <div className="file-duration" style={{ fontSize: '0.85rem' }}>
-                        {fmtTime(outputAudioTime)} / {fmtTime(outputAudioDuration)}
+                      {/* AFTER row */}
+                      <div className="ba-row">
+                        <span className="ba-label">AFTER</span>
+                        <button className="ba-play" onClick={toggleOutputPlay}>
+                          {outputIsPlaying ? '▐▐' : '▶'}
+                        </button>
+                        <div className="ba-bar" onClick={handleOutputSeek}>
+                          <div className="ba-progress" style={{ width: `${outputAudioDuration ? (outputAudioTime / outputAudioDuration) * 100 : 0}%` }} />
+                        </div>
+                        <span className="ba-time">{fmtTime(outputAudioTime)} / {fmtTime(outputAudioDuration)}</span>
                       </div>
-                      <input 
-                        type="range" min="0" max="1" step="0.01" 
-                        value={outputVolume} onChange={handleOutputVolume} 
-                        className="vol-slider" title="Volume"
-                      />
-                      <audio
-                        ref={outputAudioRef}
-                        src={outputPreviewUrl || undefined}
-                        onPlay={() => setOutputIsPlaying(true)}
-                        onPause={() => setOutputIsPlaying(false)}
-                        onEnded={() => { setOutputIsPlaying(false); setOutputAudioTime(0); }}
-                        onTimeUpdate={() => setOutputAudioTime(outputAudioRef.current?.currentTime ?? 0)}
-                        onLoadedMetadata={() => setOutputAudioDuration(outputAudioRef.current?.duration ?? 0)}
-                      />
                     </div>
+
+                    <audio
+                      ref={outputAudioRef}
+                      src={outputPreviewUrl || undefined}
+                      onPlay={() => setOutputIsPlaying(true)}
+                      onPause={() => setOutputIsPlaying(false)}
+                      onEnded={() => { setOutputIsPlaying(false); setOutputAudioTime(0); }}
+                      onTimeUpdate={() => setOutputAudioTime(outputAudioRef.current?.currentTime ?? 0)}
+                      onLoadedMetadata={() => setOutputAudioDuration(outputAudioRef.current?.duration ?? 0)}
+                    />
 
 
                     <div className="export-section">
