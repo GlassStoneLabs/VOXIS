@@ -91,7 +91,7 @@ class TrinityV8Desktop:
             from modules.device_utils import DeviceOptimizer
             DeviceOptimizer.enforce_ram_limit("SEPARATE (GS-PRISM)")
             from modules.uvr_processor import GlassStoneSeparator
-            self._separator = GlassStoneSeparator(temp_manager=self._temp_manager)
+            self._separator = GlassStoneSeparator(temp_manager=self._temp_manager, mode=self._mode)
         return self._separator
 
     @property
@@ -137,7 +137,7 @@ class TrinityV8Desktop:
     def limiter(self):
         if self._limiter is None:
             from modules.mastering_phase import PedalboardMastering
-            self._limiter = PedalboardMastering(temp_manager=self._temp_manager)
+            self._limiter = PedalboardMastering(temp_manager=self._temp_manager, mode=self._mode)
         return self._limiter
 
     # ── Memory Optimization ──────────────────────────────────────────────

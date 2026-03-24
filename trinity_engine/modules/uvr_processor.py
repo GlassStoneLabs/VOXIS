@@ -40,6 +40,14 @@ PRIMARY_MODEL = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
 # Fallback model: MDX23C (faster, smaller, still good quality)
 FALLBACK_MODEL = "MDX23C-8KFFT-InstVoc_HQ.ckpt"
 
+# Overlap per quality mode — higher overlap = fewer chunk-boundary artifacts
+_MODE_OVERLAP = {
+    "EXTREME": 0.95,  # Maximum isolation — all compute units active
+    "HIGH":    0.75,  # High quality
+    "MEDIUM":  0.50,  # Balanced speed/quality
+    "FAST":    0.25,  # Fastest, minimal redundancy
+}
+
 
 class GlassStoneSeparator:
     """
@@ -47,12 +55,14 @@ class GlassStoneSeparator:
     Isolates vocals from instruments for targeted restoration.
     """
 
-    def __init__(self, device=None, temp_manager=None):
+    def __init__(self, device=None, temp_manager=None, mode="HIGH"):
         self.device = device or DeviceOptimizer.get_optimal_device()
         self.device_str = DeviceOptimizer.get_device_string()
         self.separator = None
         self.model_loaded = False
         self._temp_manager = temp_manager
+        self._overlap = _MODE_OVERLAP.get(mode.upper(), _MODE_OVERLAP["HIGH"])
+        print(f"[{self.__class__.__name__}] Mode: {mode.upper()} | Overlap: {self._overlap}")
 
         # On Apple Silicon, prefer CoreML-accelerated ONNX runtime for MDX/VR fallback models.
         # GS-PRISM primary (BS-RoFormer) uses PyTorch directly — device_str routes it to MPS.
@@ -135,7 +145,8 @@ class GlassStoneSeparator:
                 log_level=logging.WARNING,
                 model_file_dir=self.model_dir,
                 output_dir=self.temp_dir,
-                mdx_params={"hop_length": 1024, "segment_size": 256, "overlap": 0.5, "batch_size": 1}
+                mdx_params={"hop_length": 1024, "segment_size": 256, "overlap": self._overlap, "batch_size": 1},
+                roformer_params={"segment_size": 256, "overlap": self._overlap, "batch_size": 1},
             )
 
             # audio-separator 0.41.1+: custom models (e.g. GS-PRISM/BS-RoFormer) are NOT in

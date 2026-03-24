@@ -1,9 +1,14 @@
-# VOXIS V4.0.0 DENSE — STAGE 6: MASTERING (Harman Target Curve)
+# VOXIS V4.0.0 DENSE — STAGE 7: MASTERING
 # Copyright © 2026 Glass Stone LLC. All Rights Reserved.
 # CEO: Gabriel B. Rodriguez
 #
-# Pedalboard-based mastering chain:
-#   - Mid/Side stereo width control
+# Mastering chain — primary path: PhaseLimiter AI (ai-mastering/phaselimiter)
+#   - Mid/Side stereo width control  (Pedalboard — always applied first)
+#   - PhaseLimiter AI mastering binary (phase_limiter CLI)
+#       → AI loudness matching, MS matching, bass preservation
+#       → Phase-coherent brickwall true-peak limiting @ -0.5 dBTP
+#       → Reference mode: loudness → -14 LUFS (streaming standard)
+#   ──── fallback when binary is unavailable ────────────────────────────
 #   - Harman target curve EQ (bass shelf + presence + treble rolloff)
 #   - Spectral-adaptive Auto-EQ (HPF/LPF/vocal presence from analyzer)
 #   - Multiband-style Compressor (-18 dB thr / 4:1 ratio / 10ms atk / 100ms rel)
@@ -15,6 +20,7 @@ import os
 import numpy as np
 from .device_utils import DeviceOptimizer
 from .path_utils import get_engine_base_dir
+from .phaselimiter_wrapper import PhaseLimiterWrapper
 
 # Pedalboard is the core DSP library
 try:
@@ -50,14 +56,19 @@ class PedalboardMastering:
         - Treble:     -1.5 dB shelf @ 10 kHz (Q=0.7)
     """
 
-    def __init__(self, temp_manager=None):
+    def __init__(self, temp_manager=None, mode: str = "HIGH"):
         self._temp_manager = temp_manager
+        self._mode = mode.upper()
         if temp_manager:
             self.temp_dir = temp_manager.get_stage_dir("master")
         else:
             self.temp_dir = os.path.join(get_engine_base_dir(), "trinity_temp")
         os.makedirs(self.temp_dir, exist_ok=True)
 
+        # ── PhaseLimiter AI mastering (primary path) ─────────────────────────
+        self._phaselimiter = PhaseLimiterWrapper(mode=self._mode)
+
+        # ── Pedalboard fallback chain ─────────────────────────────────────────
         # Pre-build the gain + limiter chain (static params, reused every call)
         if PEDALBOARD_AVAILABLE:
             self._main_board = Pedalboard([
@@ -83,9 +94,11 @@ class PedalboardMastering:
         self._eq_board = None
 
         print(f"[{self.__class__.__name__}] Pedalboard: {'available' if PEDALBOARD_AVAILABLE else 'NOT FOUND'}")
+        engine = "PhaseLimiter AI" if self._phaselimiter.available else "Harman/Pedalboard (fallback)"
+        print(f"[{self.__class__.__name__}] Mastering engine: {engine}")
 
-        if not PEDALBOARD_AVAILABLE:
-            print(f"[{self.__class__.__name__}] Install with: pip install pedalboard")
+        if not PEDALBOARD_AVAILABLE and not self._phaselimiter.available:
+            print(f"[{self.__class__.__name__}] Install pedalboard: pip install pedalboard")
 
     def apply(self, input_audio_path: str, width: float = 0.50,
               gain_db: float = 1.0, limiter_threshold_db: float = -0.5,
@@ -111,10 +124,6 @@ class PedalboardMastering:
         print(f"[{self.__class__.__name__}] Width: {width * 100:.0f}% | "
               f"Gain: {gain_db:+.1f}dB | Ceiling: {limiter_threshold_db:.1f}dB")
 
-        if not PEDALBOARD_AVAILABLE:
-            print(f"[{self.__class__.__name__}] Pedalboard not available — returning input.")
-            return input_audio_path
-
         if not os.path.exists(input_audio_path):
             print(f"[{self.__class__.__name__}] Input not found.")
             return input_audio_path
@@ -122,8 +131,44 @@ class PedalboardMastering:
         out_path = os.path.join(self.temp_dir, f"mastered_{fname}")
 
         try:
-            # Load audio
-            with AudioFile(input_audio_path) as f:
+            # ── Step 1: Stereo Width (Mid/Side) — always via Pedalboard ─────
+            # Applied before phaselimiter so it sees the correct stereo image.
+            width_path = input_audio_path
+            if PEDALBOARD_AVAILABLE and abs(width - 1.0) > 0.01:
+                with AudioFile(input_audio_path) as f:
+                    audio = f.read(f.frames)
+                    samplerate = f.samplerate
+                    channels = f.num_channels
+                if channels == 2:
+                    audio = self._apply_stereo_width(audio, width)
+                    width_path = os.path.join(self.temp_dir, f"width_{fname}")
+                    with AudioFile(width_path, 'w', samplerate, audio.shape[0]) as f:
+                        f.write(audio)
+                    del audio
+                    print(f"[{self.__class__.__name__}] Stereo width: {width * 100:.0f}%")
+
+            # ── Step 2: PhaseLimiter AI mastering (primary path) ─────────────
+            # Handles: AI EQ + MS matching + loudness norm + phase-coherent
+            #          true-peak brickwall limiting → -0.5 dBTP / -14 LUFS
+            if self._phaselimiter.available:
+                print(f"[{self.__class__.__name__}] [PRIMARY] PhaseLimiter AI mastering...")
+                success = self._phaselimiter.process(width_path, out_path)
+                if success and os.path.isfile(out_path):
+                    out_size = os.path.getsize(out_path)
+                    print(f"[{self.__class__.__name__}] PhaseLimiter complete → "
+                          f"{os.path.basename(out_path)} ({out_size / 1024 / 1024:.1f} MB)")
+                    return out_path
+                else:
+                    print(f"[{self.__class__.__name__}] PhaseLimiter failed — "
+                          f"falling back to Harman/Pedalboard chain.")
+
+            # ── Fallback: Harman + Pedalboard chain ──────────────────────────
+            if not PEDALBOARD_AVAILABLE:
+                print(f"[{self.__class__.__name__}] Pedalboard not available — returning input.")
+                return width_path
+
+            print(f"[{self.__class__.__name__}] [FALLBACK] Harman/Pedalboard mastering chain...")
+            with AudioFile(width_path) as f:
                 audio = f.read(f.frames)
                 samplerate = f.samplerate
                 channels = f.num_channels
@@ -131,12 +176,7 @@ class PedalboardMastering:
             print(f"[{self.__class__.__name__}] Loaded: {channels}ch @ {samplerate}Hz "
                   f"({audio.shape[-1] / samplerate:.1f}s)")
 
-            # ── Step 1: Stereo Width (Mid/Side processing) ───────────
-            if channels == 2 and abs(width - 1.0) > 0.01:
-                audio = self._apply_stereo_width(audio, width)
-                print(f"[{self.__class__.__name__}] Stereo width: {width * 100:.0f}%")
-
-            # ── Step 2: Harman Target Curve EQ (cached when params match) ───
+            # ── Harman Target Curve EQ (cached when params match) ────────────
             eq_key = (round(highpass_hz, 1), round(lowpass_hz, 1), round(vocal_presence_db, 2))
             if eq_key != self._last_eq_key:
                 harman_chain = self._build_harman_curve(highpass_hz, lowpass_hz, vocal_presence_db)
@@ -145,16 +185,16 @@ class PedalboardMastering:
             audio = self._eq_board(audio, samplerate)
             print(f"[{self.__class__.__name__}] Harman curve EQ applied")
 
-            # ── Step 3: Compressor — transparent glue (−18 dB / 4:1) ─────────
+            # ── Compressor — transparent glue (−18 dB / 4:1) ─────────────────
             if self._comp_board is not None:
                 audio = self._comp_board(audio, samplerate)
                 print(f"[{self.__class__.__name__}] Compressor: −18 dB thr / 4:1 / 10ms atk / 100ms rel")
 
-            # ── Step 4: LUFS loudness normalisation → −14 LUFS ───────────────
+            # ── LUFS loudness normalisation → −14 LUFS ───────────────────────
             lufs_target = -14.0  # Spotify / Apple Music streaming standard
             audio = self._apply_lufs_normalisation(audio, samplerate, lufs_target)
 
-            # ── Step 5: Peak normalization → Gain → Limiter ──────────────────
+            # ── Peak normalization → Gain → Limiter ──────────────────────────
             pre_peak = np.max(np.abs(audio))
             if pre_peak > 1e-6:
                 target_peak = 10 ** (-1.0 / 20.0)  # -1 dBFS
@@ -162,27 +202,26 @@ class PedalboardMastering:
                 norm_db = 20 * np.log10(target_peak / pre_peak)
                 print(f"[{self.__class__.__name__}] Peak normalized ({norm_db:+.1f}dB → -1 dBFS)")
 
-            # Update gain if it differs from default
+            # Update gain/limiter if they differ from defaults
             if abs(gain_db - 1.0) > 0.01:
                 self._main_board[0] = Gain(gain_db=gain_db)
             if abs(limiter_threshold_db - (-0.5)) > 0.01:
                 self._main_board[1] = Limiter(threshold_db=limiter_threshold_db, release_ms=100.0)
             audio = self._main_board(audio, samplerate)
 
-            # ── Step 4: Clip protection ──────────────────────────────
+            # ── Clip protection ───────────────────────────────────────────────
             peak = np.max(np.abs(audio))
             if peak > 1.0:
                 audio = audio / peak
 
-            # ── Step 5: Write output ─────────────────────────────────
-            # Compute stats before writing to avoid re-reading the array
+            # ── Write output ──────────────────────────────────────────────────
             out_peak = float(np.max(np.abs(audio)))
             out_rms = float(np.sqrt(np.mean(audio ** 2)))
             out_db = 20 * np.log10(out_rms) if out_rms > 0 else -100.0
 
             with AudioFile(out_path, 'w', samplerate, audio.shape[0]) as f:
                 f.write(audio)
-            del audio  # Free immediately after write
+            del audio
 
             out_size = os.path.getsize(out_path)
             print(f"[{self.__class__.__name__}] Mastered: {os.path.basename(out_path)} "
