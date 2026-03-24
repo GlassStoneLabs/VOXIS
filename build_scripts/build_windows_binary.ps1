@@ -63,15 +63,60 @@ if (-not $SkipPythonDeps) {
     Write-Host "[2/4] Skipping Python deps (-SkipPythonDeps)." -ForegroundColor Gray
 }
 
+# ── Build/download PhaseLimiter binary (pre-bundle) ──────────────────────────
+Write-Host "[3/5] Checking PhaseLimiter mastering binary..." -ForegroundColor Yellow
+$plBin = Join-Path $ROOT "trinity_engine\modules\external\phase\bin\Release\phase_limiter.exe"
+if (-not (Test-Path $plBin)) {
+    Write-Host "      Downloading PhaseLimiter v0.2.0 from GitHub releases..." -ForegroundColor Gray
+    $plUrl = "https://github.com/ai-mastering/phaselimiter/releases/download/v0.2.0/phaselimiter-win.zip"
+    $plZip = Join-Path $env:TEMP "phaselimiter-win.zip"
+    $plExtract = Join-Path $env:TEMP "phaselimiter-extract"
+
+    try {
+        Invoke-WebRequest -Uri $plUrl -OutFile $plZip -UseBasicParsing
+        Expand-Archive -Path $plZip -DestinationPath $plExtract -Force
+
+        # Find phase_limiter.exe in extracted archive
+        $found = Get-ChildItem -Path $plExtract -Recurse -Filter "phase_limiter.exe" | Select-Object -First 1
+        if ($found) {
+            $plDir = Split-Path $plBin
+            New-Item -ItemType Directory -Force -Path $plDir | Out-Null
+            Copy-Item $found.FullName $plBin -Force
+            Write-Host "      PhaseLimiter installed → $plBin" -ForegroundColor Green
+
+            # Copy resource/ dir if present
+            $resDir = Get-ChildItem -Path $plExtract -Recurse -Directory -Filter "resource" | Select-Object -First 1
+            if ($resDir) {
+                $dstRes = Join-Path $ROOT "trinity_engine\modules\external\phase\resource"
+                if (-not (Test-Path $dstRes)) {
+                    Copy-Item $resDir.FullName $dstRes -Recurse -Force
+                    Write-Host "      Resource dir copied." -ForegroundColor Green
+                }
+            }
+        } else {
+            Write-Host "      WARNING: phase_limiter.exe not found in archive." -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "      WARNING: PhaseLimiter download failed: $_" -ForegroundColor Yellow
+        Write-Host "      Stage 7 will use Harman/Pedalboard fallback." -ForegroundColor Yellow
+    } finally {
+        Remove-Item $plZip -Force -ErrorAction SilentlyContinue
+        Remove-Item $plExtract -Recurse -Force -ErrorAction SilentlyContinue
+    }
+} else {
+    $sizeMB = [math]::Round((Get-Item $plBin).Length / 1MB, 1)
+    Write-Host "      PhaseLimiter already exists ($sizeMB MB)" -ForegroundColor Green
+}
+
 # ── Build frozen binary ───────────────────────────────────────────────────────
-Write-Host "[3/4] Building Trinity V8.2 Engine (PyInstaller)..." -ForegroundColor Yellow
+Write-Host "[4/5] Building Trinity V8.2 Engine (PyInstaller)..." -ForegroundColor Yellow
 Set-Location $ROOT
 pyinstaller --noconfirm --clean trinity_v8_core_win.spec
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed (exit $LASTEXITCODE)" }
 Write-Host "      Binary built." -ForegroundColor Green
 
 # ── Stage output for Tauri sidecar ────────────────────────────────────────────
-Write-Host "[4/4] Staging sidecar for Tauri..." -ForegroundColor Yellow
+Write-Host "[5/5] Staging sidecar for Tauri..." -ForegroundColor Yellow
 $binDir = "$ROOT\app\src-tauri\binaries"
 if (-not (Test-Path $binDir)) { New-Item -ItemType Directory -Path $binDir | Out-Null }
 $sidecarName = "trinity_v8_core-$TARGET_TRIPLE.exe"

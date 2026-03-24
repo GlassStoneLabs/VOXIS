@@ -63,36 +63,51 @@ def find_phase_limiter_binary() -> tuple[str | None, str | None]:
     """
     Locate the phase_limiter executable and its companion sound_quality2_cache.
 
-    The binary is downloaded/built automatically by model_downloader.py on
-    first install and placed at the canonical path:
-
-      <engine_base>/modules/external/phase/bin/Release/phase_limiter
+    The binary ships pre-installed inside the frozen PyInstaller bundle.
+    At runtime, sys._MEIPASS points to the extraction directory where
+    the binary is at:  modules/external/phase/bin/Release/phase_limiter
 
     Search order:
-      1. Canonical install path (model_registry.get_phaselimiter_binary_path)
-      2. cmake Unix Makefiles / Ninja build output
+      1. Frozen bundle (sys._MEIPASS) — natively installed with the app
+      2. Engine base (dev mode) — built from source or downloaded
       3. phaselimiter-gui bundled binary
       4. System PATH (shutil.which)
 
     Returns:
         (binary_path, cache_path) — either may be None if not found.
     """
+    import sys as _sys
+
+    bin_name = "phase_limiter.exe" if _platform.system() == "Windows" else "phase_limiter"
+
+    # ── Primary: frozen PyInstaller bundle (natively installed) ───────────────
+    if getattr(_sys, 'frozen', False):
+        meipass = _sys._MEIPASS
+        frozen_bin = os.path.join(meipass, "modules", "external", "phase", "bin", "Release", bin_name)
+        frozen_cache = os.path.join(meipass, "modules", "external", "phase", "resource", _RESOURCE_DIR)
+        if os.path.isfile(frozen_bin):
+            # Ensure executable permission (PyInstaller may strip it)
+            if not os.access(frozen_bin, os.X_OK):
+                try:
+                    os.chmod(frozen_bin, 0o755)
+                except OSError:
+                    pass
+            cache = frozen_cache if os.path.isdir(frozen_cache) else None
+            return frozen_bin, cache
+
+    # ── Secondary: dev mode (engine base directory) ──────────────────────────
     base = get_engine_base_dir()
     phase_root = os.path.join(base, "modules", "external", "phase")
 
-    # Hard-coded resource path (always the same regardless of build type)
     cache_path = os.path.join(phase_root, "resource", _RESOURCE_DIR)
     cache = cache_path if os.path.isdir(cache_path) else None
 
-    # Binary name varies by OS
-    bin_name = "phase_limiter.exe" if _platform.system() == "Windows" else "phase_limiter"
-
-    # ── Primary: canonical install path (model registry) ─────────────────────
+    # Canonical install path (build output or model downloader target)
     canonical = os.path.join(phase_root, "bin", "Release", bin_name)
     if os.path.isfile(canonical) and os.access(canonical, os.X_OK):
         return canonical, cache
 
-    # ── Secondary: cmake Unix Makefiles / Ninja build output ────────────────
+    # cmake Unix Makefiles / Ninja build output
     unix_bin = os.path.join(phase_root, "bin", bin_name)
     if os.path.isfile(unix_bin) and os.access(unix_bin, os.X_OK):
         return unix_bin, cache

@@ -65,6 +65,7 @@ hiddenimports = [
     'modules.voicerestore_wrapper',
     'modules.upsampler',
     'modules.mastering_phase',
+    'modules.phaselimiter_wrapper',
     'modules.error_telemetry',
     'modules.pipeline_cache',
     'modules.retry_engine',
@@ -89,7 +90,18 @@ hiddenimports = [
 
 datas = [
     ('trinity_engine/modules/external', 'modules/external'),
+    # PhaseLimiter resource dir (sound_quality2_cache for mastering presets)
+    ('trinity_engine/modules/external/phase/resource', 'modules/external/phase/resource'),
 ]
+
+# ── PhaseLimiter native binary (bundled — ships with installer) ──────────────
+_phaselimiter_bin = os.path.join('trinity_engine', 'modules', 'external', 'phase', 'bin', 'Release', 'phase_limiter')
+if os.path.isfile(_phaselimiter_bin):
+    datas += [(_phaselimiter_bin, os.path.join('modules', 'external', 'phase', 'bin', 'Release'))]
+    print(f"[SPEC] PhaseLimiter binary bundled: {_phaselimiter_bin}")
+else:
+    print(f"[SPEC] WARNING: PhaseLimiter binary not found at {_phaselimiter_bin}")
+    print(f"[SPEC] Build it first: cd trinity_engine/modules/external/phase && ./build_macos_native.sh")
 try:
     datas += collect_data_files('df', includes=['**/*.onnx', '**/*.pt', '**/*.yaml'])
 except Exception:

@@ -83,6 +83,25 @@ if ! $SKIP_PYTHON; then
   python3 -m pip install --quiet -r "${ENGINE_DIR}/requirements.txt"
   python3 -m pip install --quiet pyinstaller
 
+  # ── Build PhaseLimiter native binary (pre-bundle) ──────────────────────────
+  PHASELIMITER_BIN="${ENGINE_DIR}/modules/external/phase/bin/Release/phase_limiter"
+  if [[ ! -f "$PHASELIMITER_BIN" ]]; then
+    log "Building PhaseLimiter native binary (Apple Accelerate)..."
+    PHASELIMITER_BUILD="${ENGINE_DIR}/modules/external/phase/build_macos_native.sh"
+    if [[ -f "$PHASELIMITER_BUILD" ]]; then
+      bash "$PHASELIMITER_BUILD"
+      if [[ -f "$PHASELIMITER_BIN" ]]; then
+        ok "PhaseLimiter binary built → $(du -sh "$PHASELIMITER_BIN" | cut -f1)"
+      else
+        warn "PhaseLimiter build completed but binary not found — Stage 7 will use Harman/Pedalboard fallback"
+      fi
+    else
+      warn "PhaseLimiter build script not found — skipping"
+    fi
+  else
+    ok "PhaseLimiter binary already exists → $(du -sh "$PHASELIMITER_BIN" | cut -f1)"
+  fi
+
   # Build frozen binary
   SPEC_FILE="${PROJECT_ROOT}/trinity_v8_core.spec"
   if [[ ! -f "$SPEC_FILE" ]]; then

@@ -43,7 +43,18 @@ jobs:
           python -m pip install -r trinity_engine/requirements.txt
           python -m pip install pyinstaller
 
-      # ── Build Trinity V8.1 Engine (PyInstaller) ───────────────────────────
+      # ── Build PhaseLimiter native binary (Apple Accelerate) ──────────────
+      - name: Install PhaseLimiter build deps
+        run: brew install boost libsndfile tbb libpng zlib fftw
+
+      - name: Build PhaseLimiter (ARM64 native)
+        run: |
+          cd trinity_engine/modules/external/phase
+          chmod +x build_macos_native.sh
+          ./build_macos_native.sh
+        continue-on-error: true
+
+      # ── Build Trinity V8.2 Engine (PyInstaller) ───────────────────────────
       - name: Build Trinity Engine Binary
         run: |
           pyinstaller --noconfirm --clean trinity_v8_core.spec
@@ -117,7 +128,31 @@ jobs:
           python -m pip install -r trinity_engine/requirements.txt
           python -m pip install pyinstaller
 
-      # ── Build Trinity V8.1 Engine ─────────────────────────────────────────
+      # ── Download PhaseLimiter prebuilt (Windows x64) ─────────────────────
+      - name: Download PhaseLimiter binary
+        shell: pwsh
+        run: |
+          $plUrl = "https://github.com/ai-mastering/phaselimiter/releases/download/v0.2.0/phaselimiter-win.zip"
+          $plZip = "$env:TEMP\phaselimiter-win.zip"
+          $plExtract = "$env:TEMP\phaselimiter-extract"
+          Invoke-WebRequest -Uri $plUrl -OutFile $plZip -UseBasicParsing
+          Expand-Archive -Path $plZip -DestinationPath $plExtract -Force
+          $found = Get-ChildItem -Path $plExtract -Recurse -Filter "phase_limiter.exe" | Select-Object -First 1
+          if ($found) {
+            $destDir = "trinity_engine\modules\external\phase\bin\Release"
+            New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+            Copy-Item $found.FullName "$destDir\phase_limiter.exe" -Force
+            Write-Host "PhaseLimiter installed: $destDir\phase_limiter.exe"
+          }
+          # Copy resource dir
+          $resDir = Get-ChildItem -Path $plExtract -Recurse -Directory -Filter "resource" | Select-Object -First 1
+          if ($resDir) {
+            $dstRes = "trinity_engine\modules\external\phase\resource"
+            if (-not (Test-Path $dstRes)) { Copy-Item $resDir.FullName $dstRes -Recurse -Force }
+          }
+        continue-on-error: true
+
+      # ── Build Trinity V8.2 Engine ─────────────────────────────────────────
       - name: Build Trinity Engine Binary (Windows)
         shell: pwsh
         run: pyinstaller --noconfirm --clean trinity_v8_core_win.spec
