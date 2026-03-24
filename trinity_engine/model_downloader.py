@@ -27,6 +27,7 @@ import platform
 from model_registry import (
     MODELS, get_models_base, get_model_path,
     check_model_installed, check_all_models, get_missing_models,
+    get_phaselimiter_install_dir, get_phaselimiter_binary_path,
 )
 
 
@@ -180,6 +181,181 @@ def download_huggingface(model: dict) -> bool:
     return False
 
 
+# ── Download: PhaseLimiter binary ─────────────────────────────────────────────
+
+def download_phaselimiter(model: dict) -> bool:
+    """
+    Download and install the phase_limiter mastering binary.
+      - Windows: downloads phaselimiter-win.zip, extracts bin/phase_limiter.exe
+      - Linux:   downloads release.tar.xz, extracts bin/phase_limiter
+      - macOS:   builds from bundled source via build_macos_native.sh
+    """
+    import tempfile
+    import subprocess
+    import shutil
+
+    model_id = model["id"]
+    model_name = model["name"]
+    current_os = platform.system()
+    urls = model.get("urls", {})
+    url = urls.get(current_os)
+
+    if not url:
+        emit("error", id=model_id, name=model_name,
+             error=f"No PhaseLimiter binary available for {current_os}")
+        return False
+
+    install_dir = get_phaselimiter_install_dir()
+    os.makedirs(install_dir, exist_ok=True)
+
+    # ── macOS: build from bundled source ─────────────────────────────────────
+    if url == "build_from_source":
+        emit("downloading", id=model_id, name=model_name,
+             source="build_from_source", platform=current_os)
+        print(f"[PhaseLimiter] macOS detected — building native ARM64 binary from source...")
+
+        engine_dir = os.path.dirname(os.path.abspath(__file__))
+        build_script = os.path.join(
+            engine_dir, "modules", "external", "phase", "build_macos_native.sh"
+        )
+
+        if not os.path.isfile(build_script):
+            emit("error", id=model_id, name=model_name,
+                 error="build_macos_native.sh not found in modules/external/phase/")
+            return False
+
+        try:
+            proc = subprocess.run(
+                ["bash", build_script],
+                capture_output=False,
+                timeout=1800,  # 30 min max
+            )
+            if proc.returncode != 0:
+                emit("error", id=model_id, name=model_name,
+                     error=f"macOS build failed (exit {proc.returncode})")
+                return False
+        except subprocess.TimeoutExpired:
+            emit("error", id=model_id, name=model_name,
+                 error="macOS build timed out after 30 minutes")
+            return False
+        except Exception as e:
+            emit("error", id=model_id, name=model_name, error=str(e))
+            return False
+
+        binary_path = get_phaselimiter_binary_path()
+        if os.path.isfile(binary_path):
+            emit("downloaded", id=model_id, name=model_name,
+                 source="build_from_source", platform=current_os)
+            print(f"[PhaseLimiter] Native build complete → {binary_path}")
+            return True
+        else:
+            emit("error", id=model_id, name=model_name,
+                 error="Build completed but binary not found")
+            return False
+
+    # ── Windows / Linux: download prebuilt from GitHub releases ──────────────
+    emit("downloading", id=model_id, name=model_name,
+         source="github_release", platform=current_os, url=url)
+
+    import urllib.request
+    import urllib.error
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        archive_name = url.split("/")[-1]
+        archive_path = os.path.join(tmpdir, archive_name)
+
+        # Download archive
+        for attempt in range(MAX_RETRIES):
+            try:
+                req = urllib.request.Request(url)
+                req.add_header("User-Agent", "VOXIS/4.0.0")
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    total = int(resp.headers.get("Content-Length", 0)) or model["size_mb"] * 1024 * 1024
+                    downloaded = 0
+                    with open(archive_path, "wb") as f:
+                        while True:
+                            chunk = resp.read(CHUNK_SIZE)
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            pct = min(100.0, downloaded * 100 / total) if total > 0 else 0
+                            emit("progress", id=model_id, name=model_name,
+                                 pct=round(pct, 1),
+                                 mb_done=round(downloaded / (1024*1024), 1),
+                                 mb_total=round(total / (1024*1024), 1))
+                break  # success
+            except (urllib.error.URLError, OSError, TimeoutError) as e:
+                wait = RETRY_BACKOFF_SEC[min(attempt, len(RETRY_BACKOFF_SEC) - 1)]
+                emit("retry", id=model_id, name=model_name,
+                     attempt=attempt + 1, max_retries=MAX_RETRIES,
+                     error=str(e), wait_sec=wait)
+                time.sleep(wait)
+        else:
+            emit("error", id=model_id, name=model_name,
+                 error=f"Download failed after {MAX_RETRIES} attempts")
+            return False
+
+        # Extract binary from archive
+        print(f"[PhaseLimiter] Extracting {archive_name}...")
+        extract_dir = os.path.join(tmpdir, "extracted")
+        os.makedirs(extract_dir, exist_ok=True)
+
+        try:
+            if archive_name.endswith(".zip"):
+                import zipfile
+                with zipfile.ZipFile(archive_path, "r") as zf:
+                    zf.extractall(extract_dir)
+            elif archive_name.endswith((".tar.xz", ".tar.gz", ".tar.bz2")):
+                import tarfile
+                with tarfile.open(archive_path) as tf:
+                    tf.extractall(extract_dir)
+            else:
+                emit("error", id=model_id, name=model_name,
+                     error=f"Unknown archive format: {archive_name}")
+                return False
+        except Exception as e:
+            emit("error", id=model_id, name=model_name,
+                 error=f"Archive extraction failed: {e}")
+            return False
+
+        # Find the phase_limiter binary inside the extracted tree
+        binary_name = "phase_limiter.exe" if current_os == "Windows" else "phase_limiter"
+        found_binary = None
+        for root, dirs, files in os.walk(extract_dir):
+            if binary_name in files:
+                found_binary = os.path.join(root, binary_name)
+                break
+
+        if not found_binary:
+            emit("error", id=model_id, name=model_name,
+                 error=f"Binary '{binary_name}' not found in extracted archive")
+            return False
+
+        # Copy binary to install location
+        dest = get_phaselimiter_binary_path()
+        shutil.copy2(found_binary, dest)
+        os.chmod(dest, 0o755)
+
+        # Also copy resource/ directory if present (sound_quality2_cache)
+        for root, dirs, files in os.walk(extract_dir):
+            if "resource" in dirs:
+                src_resource = os.path.join(root, "resource")
+                dst_resource = os.path.join(
+                    os.path.dirname(os.path.dirname(install_dir)), "resource"
+                )
+                if not os.path.isdir(dst_resource):
+                    shutil.copytree(src_resource, dst_resource)
+                    print(f"[PhaseLimiter] Copied resource dir → {dst_resource}")
+                break
+
+        size_mb = os.path.getsize(dest) / (1024 * 1024)
+        emit("downloaded", id=model_id, name=model_name,
+             size_mb=round(size_mb, 1), platform=current_os)
+        print(f"[PhaseLimiter] Installed → {dest} ({size_mb:.1f} MB)")
+        return True
+
+
 # ── SHA-256 Verification ─────────────────────────────────────────────────────
 
 def verify_sha256(file_path: str, expected_hash: str) -> bool:
@@ -267,6 +443,8 @@ def download_all_models() -> dict:
             success = download_direct(model)
         elif source == "huggingface":
             success = download_huggingface(model)
+        elif source == "phaselimiter":
+            success = download_phaselimiter(model)
         else:
             print(f"[Downloader] Unknown source: {source}")
             success = False

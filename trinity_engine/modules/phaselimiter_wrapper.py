@@ -27,6 +27,7 @@ import os
 import re
 import shutil
 import subprocess
+import platform as _platform
 
 from .path_utils import get_engine_base_dir
 
@@ -62,16 +63,16 @@ def find_phase_limiter_binary() -> tuple[str | None, str | None]:
     """
     Locate the phase_limiter executable and its companion sound_quality2_cache.
 
-    Hard-coded primary path (built from source inside the Voxis project):
-      <engine_base>/modules/external/phase/bin/Release/phase_limiter   (macOS Xcode)
+    The binary is downloaded/built automatically by model_downloader.py on
+    first install and placed at the canonical path:
 
-    Fallback search order:
-      2. <engine_base>/modules/external/phase/bin/phase_limiter         (cmake Unix)
-      3. <engine_base>/modules/external/phaselimiter_gui/phaselimiter/bin/
+      <engine_base>/modules/external/phase/bin/Release/phase_limiter
+
+    Search order:
+      1. Canonical install path (model_registry.get_phaselimiter_binary_path)
+      2. cmake Unix Makefiles / Ninja build output
+      3. phaselimiter-gui bundled binary
       4. System PATH (shutil.which)
-
-    The sound_quality2_cache resource sits at:
-      <engine_base>/modules/external/phase/resource/sound_quality2_cache
 
     Returns:
         (binary_path, cache_path) — either may be None if not found.
@@ -83,13 +84,16 @@ def find_phase_limiter_binary() -> tuple[str | None, str | None]:
     cache_path = os.path.join(phase_root, "resource", _RESOURCE_DIR)
     cache = cache_path if os.path.isdir(cache_path) else None
 
-    # ── Primary: Xcode Release build output ─────────────────────────────────
-    xcode_bin = os.path.join(phase_root, "bin", "Release", "phase_limiter")
-    if os.path.isfile(xcode_bin) and os.access(xcode_bin, os.X_OK):
-        return xcode_bin, cache
+    # Binary name varies by OS
+    bin_name = "phase_limiter.exe" if _platform.system() == "Windows" else "phase_limiter"
+
+    # ── Primary: canonical install path (model registry) ─────────────────────
+    canonical = os.path.join(phase_root, "bin", "Release", bin_name)
+    if os.path.isfile(canonical) and os.access(canonical, os.X_OK):
+        return canonical, cache
 
     # ── Secondary: cmake Unix Makefiles / Ninja build output ────────────────
-    unix_bin = os.path.join(phase_root, "bin", "phase_limiter")
+    unix_bin = os.path.join(phase_root, "bin", bin_name)
     if os.path.isfile(unix_bin) and os.access(unix_bin, os.X_OK):
         return unix_bin, cache
 
@@ -139,7 +143,10 @@ class PhaseLimiterWrapper:
                   f"bass={self._params['bass']} | "
                   f"mastering_mode={self._params['mode']}")
         else:
-            print("[PhaseLimiter] Binary not found — Harman/Pedalboard chain will be used as fallback.")
+            print("[PhaseLimiter] [WARNING] Binary not found!")
+            print("[PhaseLimiter] Run model downloader to install: python3 model_downloader.py --download")
+            print("[PhaseLimiter] Or build from source: ./modules/external/phase/build_macos_native.sh")
+            print("[PhaseLimiter] Falling back to Harman/Pedalboard chain.")
 
     def process(self, input_path: str, output_path: str, ffmpeg: str = "ffmpeg") -> bool:
         """

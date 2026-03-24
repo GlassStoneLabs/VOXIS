@@ -16,6 +16,7 @@ Used by:
 
 import os
 import sys
+import platform
 
 # ── Base directory (frozen binary → ~/.voxis/, dev → trinity_engine/) ─────
 
@@ -143,6 +144,25 @@ MODELS = [
         "required":    True,
         "description": "Facebook XLS-R 300M frozen content encoder",
     },
+
+    # ── PhaseLimiter (AI mastering binary — Stage 7 MASTER) ────────────
+    {
+        "id":          "phaselimiter_binary",
+        "name":        "PhaseLimiter AI (Mastering Engine)",
+        "stage":       "MASTER",
+        "source":      "phaselimiter",
+        "urls": {
+            "Windows": "https://github.com/ai-mastering/phaselimiter/releases/download/v0.2.0/phaselimiter-win.zip",
+            "Linux":   "https://github.com/ai-mastering/phaselimiter/releases/download/v0.2.0/release.tar.xz",
+            "Darwin":  "build_from_source",
+        },
+        "filename":    "phase_limiter",
+        "subdir":      "phaselimiter",
+        "size_mb":     50,
+        "sha256":      None,
+        "required":    True,
+        "description": "AI mastering engine — phase-coherent limiter + loudness matching (bakuage.com/aimastering.com)",
+    },
 ]
 
 
@@ -154,12 +174,32 @@ def get_model_path(model_entry: dict) -> str:
     return os.path.join(base, model_entry["subdir"], model_entry["filename"])
 
 
+def get_phaselimiter_install_dir() -> str:
+    """Canonical install directory for the phase_limiter binary."""
+    engine_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(engine_dir, "modules", "external", "phase", "bin", "Release")
+
+
+def get_phaselimiter_binary_path() -> str:
+    """Full path to the installed phase_limiter binary."""
+    name = "phase_limiter.exe" if platform.system() == "Windows" else "phase_limiter"
+    return os.path.join(get_phaselimiter_install_dir(), name)
+
+
 def check_model_installed(model_entry: dict) -> bool:
     """Check if a model file exists at its expected path."""
+    if model_entry["source"] == "phaselimiter":
+        return _check_phaselimiter()
     if model_entry["source"] == "huggingface":
         return _check_hf_model(model_entry)
     path = get_model_path(model_entry)
     return os.path.exists(path)
+
+
+def _check_phaselimiter() -> bool:
+    """Check if the phase_limiter binary is installed and executable."""
+    binary = get_phaselimiter_binary_path()
+    return os.path.isfile(binary) and os.access(binary, os.X_OK)
 
 
 def _check_hf_model(model_entry: dict) -> bool:
